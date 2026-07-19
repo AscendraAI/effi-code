@@ -30,7 +30,9 @@ case "$MODE" in
     export ANTHROPIC_SMALL_FAST_MODEL="$LOCAL_MODEL"
     export OLLAMA_KEEP_ALIVE="30m"           # 모델을 메모리에 유지 → 매 호출 로드 지연 제거
     echo "▶ LOCAL 모드 · $LOCAL_MODEL (무료·로컬). 스코프 좁은 작업 위주로. 어려운 건 유료 복구 후."
-    exec claude "$@"
+    # 작은 로컬 모델은 MCP 도구 수백 개에 파묻히면 오작동한다.
+    # --strict-mcp-config 로 MCP 전부 끄고 내장 코딩 도구만 남긴다(안정성↑).
+    exec claude --strict-mcp-config "$@"
     ;;
   cloud)
     unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL 2>/dev/null || true
