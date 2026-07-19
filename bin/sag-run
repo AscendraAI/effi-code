@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# sag-run — 로컬 모델(qwen 등)에게 "자족적 생성 작업"을 위임하고 결과를 반환.
+# 오케스트레이터(클로드)가 지루한 대량·기계적 작업을 로컬(공짜)로 넘길 때 호출한다.
+#
+#   sag-run "이 함수들에 docstring 달아줘: <코드>"
+#   echo "다음 30개 문자열 한글로 번역: ..." | sag-run
+#   sag-run -m devstral "작업..."          # 모델 override
+#
+# 결과는 stdout으로만 나온다(클로드가 캡처 → 검증 후 적용). 파일은 안 건드림.
+set -euo pipefail
+
+MODEL="${SA_LOCAL_MODEL:-qwen2.5-coder:7b}"
+OLLAMA_URL="http://localhost:11434"
+
+if [ "${1:-}" = "-m" ]; then MODEL="$2"; shift 2; fi
+if [ "$#" -gt 0 ]; then PROMPT="$*"; else PROMPT="$(cat)"; fi
+[ -z "${PROMPT:-}" ] && { echo "사용법: sag-run [-m 모델] \"작업\"  (또는 stdin)" >&2; exit 1; }
+
+curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1 || { echo "Ollama 꺼짐 — 'ollama serve' 먼저" >&2; exit 1; }
+
+SAG_MODEL="$MODEL" SAG_PROMPT="$PROMPT" SAG_URL="$OLLAMA_URL" python3 - <<'PY'
+import os, json, urllib.request, sys
+body = json.dumps({
+    "model": os.environ["SAG_MODEL"],
+    "prompt": os.environ["SAG_PROMPT"],
+    "stream": False,
+    "keep_alive": "30m",
+}).encode()
+req = urllib.request.Request(os.environ["SAG_URL"] + "/api/generate",
+                            data=body, headers={"content-type": "application/json"})
+try:
+    with urllib.request.urlopen(req, timeout=600) as r:
+        d = json.load(r)
+except Exception as e:
+    print("로컬 위임 실패:", e, file=sys.stderr); sys.exit(1)
+print(d.get("response", "").rstrip())
+PY

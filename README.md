@@ -43,6 +43,7 @@ super-agent/
 ├── FALLBACK.md           # 쿼터 소진 → 로컬 폴백 설정
 ├── LOCAL-MODELS.md       # 맥 RAM별 모델 + Ollama 세팅
 ├── bin/sag                # 런처/토글 (구독 Claude ↔ 로컬 폴백)
+├── bin/sag-run            # 로컬 워커 — 지루한 대량 작업을 로컬에 위임
 ├── docs/why.md           # 설계 근거 (딥리서치 요약)
 └── templates/            # task · brief · log
 ```
