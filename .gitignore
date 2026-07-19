@@ -1,0 +1,15 @@
+# 실제 작업 산출물은 공개하지 않음 (템플릿만 공개)
+tasks/
+
+# 비밀·설정
+.env
+*.local.json
+config.local.*
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/
+
+# 로컬 모델
+*.gguf
