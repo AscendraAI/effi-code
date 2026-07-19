@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# super-agent 런처/토글 — 평소 구독 Claude, 쿼터 소진 시 로컬로 전환.
-#   ( 명령 이름은 sag = super-aGent. 'sa'는 macOS 시스템 명령이라 피함 )
+# effi-code 런처/토글 — 평소 구독 Claude, 쿼터 소진 시 로컬로 전환.
+#   ( effi-code 툴킷의 런처. 명령 이름 effi )
 #
-#   sag            평소 = CLOUD (구독 Claude+Codex+Gemini 오케스트레이션)
-#   sag local      LOCAL 모드로 Claude Code 실행 (무료, 쿼터 백스톱)
-#   sag cloud      CLOUD 모드로 실행 (기본과 동일)
-#   sag status     현재 모드/로컬 상태 확인
+#   effi            평소 = CLOUD (구독 Claude+Codex+Gemini 오케스트레이션)
+#   effi local      LOCAL 모드로 Claude Code 실행 (무료, 쿼터 백스톱)
+#   effi cloud      CLOUD 모드로 실행 (기본과 동일)
+#   effi status     현재 모드/로컬 상태 확인
 #
 # 구독은 프록시로 못 돌린다(Anthropic ToS, 2026-02). 그래서 "라우터"가 아니라
-# 이 토글이 정답 — 한도 메시지를 보면 `sag local`로 이어서 작업.
+# 이 토글이 정답 — 한도 메시지를 보면 `effi local`로 이어서 작업.
 set -euo pipefail
 
-LOCAL_MODEL="${SA_LOCAL_MODEL:-}"   # 비었으면 sag-pick가 현재 가용 메모리에 맞춰 자동 선택
+LOCAL_MODEL="${EFFI_LOCAL_MODEL:-}"   # 비었으면 effi-pick가 현재 가용 메모리에 맞춰 자동 선택
 OLLAMA_URL="http://localhost:11434"
 
 ensure_ollama() {
@@ -24,7 +24,7 @@ MODE="${1:-cloud}"; shift || true
 case "$MODE" in
   local)
     ensure_ollama
-    if [ -z "$LOCAL_MODEL" ]; then LOCAL_MODEL="$(sag-pick 2>/dev/null || echo qwen2.5-coder:3b)"; fi
+    if [ -z "$LOCAL_MODEL" ]; then LOCAL_MODEL="$(effi-pick 2>/dev/null || echo qwen2.5-coder:3b)"; fi
     ollama list 2>/dev/null | grep -q "$LOCAL_MODEL" || { echo "  · $LOCAL_MODEL 다운로드…"; ollama pull "$LOCAL_MODEL"; }
     export ANTHROPIC_BASE_URL="$OLLAMA_URL"
     export ANTHROPIC_API_KEY="ollama"
@@ -42,11 +42,11 @@ case "$MODE" in
     exec claude "$@"
     ;;
   status)
-    if [ -n "$LOCAL_MODEL" ]; then echo "로컬 모델(고정): $LOCAL_MODEL"; else echo "로컬 모델(자동): $(sag-pick 2>/dev/null || echo '?')"; fi
+    if [ -n "$LOCAL_MODEL" ]; then echo "로컬 모델(고정): $LOCAL_MODEL"; else echo "로컬 모델(자동): $(effi-pick 2>/dev/null || echo '?')"; fi
     if curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
       echo "Ollama: ✅ 실행 중"; ollama list 2>/dev/null | grep -iE 'coder|devstral' || true
-    else echo "Ollama: ❌ 꺼짐 (sag local 시 자동 기동)"; fi
+    else echo "Ollama: ❌ 꺼짐 (effi local 시 자동 기동)"; fi
     ;;
   *)
-    echo "사용법: sag [cloud|local|status]"; exit 1 ;;
+    echo "사용법: effi [cloud|local|status]"; exit 1 ;;
 esac

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sag-pick — 현재 "가용 메모리"에 맞는 로컬 코딩 모델을 고른다 (컴퓨터가 느려지지 않게).
+# effi-pick — 현재 "가용 메모리"에 맞는 로컬 코딩 모델을 고른다 (컴퓨터가 느려지지 않게).
 # stdout = 추천 모델명 (스크립트가 소비). stderr = 근거.
 # 규칙: 모델 런타임 footprint ≤ min(가용+현재로드모델 − 여유4GB, 총RAM×60%).
 set -euo pipefail
@@ -34,8 +34,8 @@ pick = cands[-1][0]
 for name, gb in cands:
     if gb <= eff: pick = name; break
 
-sys.stderr.write(f"[sag-pick] 총 {total:.0f}GB · 가용 {avail:.1f}GB · 현재로드 {loaded:.1f}GB → 예산 {eff:.1f}GB → {pick}\n")
+sys.stderr.write(f"[effi-pick] 총 {total:.0f}GB · 가용 {avail:.1f}GB · 현재로드 {loaded:.1f}GB → 예산 {eff:.1f}GB → {pick}\n")
 if eff < 2.0:
-    sys.stderr.write("[sag-pick] ⚠️ 메모리 매우 부족 — 앱을 닫으면 더 큰(더 똑똑한) 모델을 쓸 수 있어요.\n")
+    sys.stderr.write("[effi-pick] ⚠️ 메모리 매우 부족 — 앱을 닫으면 더 큰(더 똑똑한) 모델을 쓸 수 있어요.\n")
 print(pick)
 PY

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# super-agent 세팅 스크립트 (macOS / Apple Silicon)
+# effi-code 세팅 스크립트 (macOS / Apple Silicon)
 # 하는 일: Ollama 설치·기동 → RAM에 맞는 코딩 모델 다운 → 라우터 안내.
 # 안전: 이미 있으면 건너뜀. 파괴적 작업 없음. 설치 전 무엇을 할지 출력.
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 say() { printf "\n\033[1m▸ %s\033[0m\n" "$1"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-say "super-agent 세팅 시작 (macOS)"
+say "effi-code 세팅 시작 (macOS)"
 
 # 0) 플랫폼 확인
 if [[ "$(uname)" != "Darwin" ]]; then
@@ -71,11 +71,11 @@ EOF
 
 say "폴백 런처 설치 (선택)"
 cat <<'EOF'
-  구독 사용자는 라우터 대신 sag 토글을 씁니다 (구독 프록시는 Anthropic ToS 위반):
-    ln -s "$PWD/bin/sag" /opt/homebrew/bin/sag    # 또는 PATH에 bin/ 추가
-    sag            # 평소 = 구독 Claude
-    sag local      # 한도 소진 시 → 로컬(무료)
-    sag status     # 상태
+  구독 사용자는 라우터 대신 effi 토글을 씁니다 (구독 프록시는 Anthropic ToS 위반):
+    ln -s "$PWD/bin/effi" /opt/homebrew/bin/effi    # 또는 PATH에 bin/ 추가
+    effi            # 평소 = 구독 Claude
+    effi local      # 한도 소진 시 → 로컬(무료)
+    effi status     # 상태
 EOF
 
-say "완료. 남은 것: sag 를 PATH에 넣기 + ORCHESTRATION.md를 세션 규칙으로 물리기."
+say "완료. 남은 것: effi 를 PATH에 넣기 + ORCHESTRATION.md를 세션 규칙으로 물리기."

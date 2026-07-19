@@ -1,4 +1,4 @@
-# super-agent
+# effi-code
 
 **A cost-optimized, multi-model coding-agent orchestration.**
 Run Claude as the lead, spend the least, and keep working on a free local model when your paid quota runs out.
@@ -14,9 +14,9 @@ Run Claude as the lead, spend the least, and keep working on a free local model 
 
 ---
 
-## What is super-agent?
+## What is effi-code?
 
-super-agent turns a single coding session (Claude Code) into a small, cost-aware **team**: a strong **Claude** lead, cheaper **Codex / Gemini** helpers, and a free **local model** running on your own machine. An orchestrator routes each task to the cheapest tier that can do it, and escalates only when it must.
+effi-code turns a single coding session (Claude Code) into a small, cost-aware **team**: a strong **Claude** lead, cheaper **Codex / Gemini** helpers, and a free **local model** running on your own machine. An orchestrator routes each task to the cheapest tier that can do it, and escalates only when it must.
 
 It solves two everyday pains:
 
@@ -47,30 +47,30 @@ local (free)  →  Codex  →  Gemini  →  Claude (top)
 
 ### Installation
 ```bash
-git clone https://github.com/AscendraAI/super-agent && cd super-agent
+git clone https://github.com/AscendraAI/effi-code && cd effi-code
 
 ./setup.sh                                    # installs Ollama, picks & pulls a local model that fits your Mac
-ln -s "$PWD/bin/sag"      /opt/homebrew/bin/sag
-ln -s "$PWD/bin/sag-run"  /opt/homebrew/bin/sag-run
-ln -s "$PWD/bin/sag-pick" /opt/homebrew/bin/sag-pick
+ln -s "$PWD/bin/effi"      /opt/homebrew/bin/effi
+ln -s "$PWD/bin/effi-run"  /opt/homebrew/bin/effi-run
+ln -s "$PWD/bin/effi-pick" /opt/homebrew/bin/effi-pick
 ```
 
 ### Configuration
 - Load `ORCHESTRATION.md` as your session's rules (e.g. as the project's `CLAUDE.md`). The orchestrator reads it on every task.
-- The local model is chosen **automatically** by available memory — no config needed. Pin one with `SA_LOCAL_MODEL=devstral sag local`.
+- The local model is chosen **automatically** by available memory — no config needed. Pin one with `EFFI_LOCAL_MODEL=devstral effi local`.
 
 ## Usage
 
 ```bash
-sag            # normal — subscription Claude (smartest)
-sag local      # quota exhausted → free local model (auto-sized to your free RAM)
-sag status     # which local model fits right now
+effi            # normal — subscription Claude (smartest)
+effi local      # quota exhausted → free local model (auto-sized to your free RAM)
+effi status     # which local model fits right now
 ```
 
 Delegate a boring, high-volume job straight to the local model:
 
 ```bash
-sag-run "Translate these 5 UI strings to natural Korean: Save, Cancel, Delete, Loading, Done"
+effi-run "Translate these 5 UI strings to natural Korean: Save, Cancel, Delete, Loading, Done"
 ```
 
 And in a normal Claude session, the orchestrator will **offer** to delegate tedious bulk work for you:
@@ -92,7 +92,7 @@ Full reasoning with citations: [`docs/why.md`](docs/why.md).
 ## Honest limits
 
 - Local can't match the cloud on complex, multi-file work — it's a backstop.
-- Subscription users switch to local **manually** (`sag local`) — that's the ToS-clean path.
+- Subscription users switch to local **manually** (`effi local`) — that's the ToS-clean path.
 - On a busy 16GB Mac, only small local models stay smooth. Memory is the ceiling, not the tool.
 - Router/local tools change monthly — check each project's latest docs before configuring.
 
