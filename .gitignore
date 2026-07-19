@@ -13,3 +13,7 @@ config.local.*
 
 # 로컬 모델
 *.gguf
+
+# bkit 플러그인 상태 (공개 안 함)
+.bkit/
+.claude/
