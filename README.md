@@ -44,6 +44,7 @@ super-agent/
 ├── LOCAL-MODELS.md       # 맥 RAM별 모델 + Ollama 세팅
 ├── bin/sag                # 런처/토글 (구독 Claude ↔ 로컬 폴백)
 ├── bin/sag-run            # 로컬 워커 — 지루한 대량 작업을 로컬에 위임
+├── bin/sag-pick           # 가용 메모리에 맞는 로컬 모델 자동 선택 (안 느려지게)
 ├── docs/why.md           # 설계 근거 (딥리서치 요약)
 └── templates/            # task · brief · log
 ```

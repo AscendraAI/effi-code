@@ -11,7 +11,7 @@
 # 이 토글이 정답 — 한도 메시지를 보면 `sag local`로 이어서 작업.
 set -euo pipefail
 
-LOCAL_MODEL="${SA_LOCAL_MODEL:-qwen2.5-coder:7b}"   # 16GB=7b(빠름). 24GB면 devstral 로 override
+LOCAL_MODEL="${SA_LOCAL_MODEL:-}"   # 비었으면 sag-pick가 현재 가용 메모리에 맞춰 자동 선택
 OLLAMA_URL="http://localhost:11434"
 
 ensure_ollama() {
@@ -24,6 +24,8 @@ MODE="${1:-cloud}"; shift || true
 case "$MODE" in
   local)
     ensure_ollama
+    if [ -z "$LOCAL_MODEL" ]; then LOCAL_MODEL="$(sag-pick 2>/dev/null || echo qwen2.5-coder:3b)"; fi
+    ollama list 2>/dev/null | grep -q "$LOCAL_MODEL" || { echo "  · $LOCAL_MODEL 다운로드…"; ollama pull "$LOCAL_MODEL"; }
     export ANTHROPIC_BASE_URL="$OLLAMA_URL"
     export ANTHROPIC_API_KEY="ollama"
     export ANTHROPIC_MODEL="$LOCAL_MODEL"
@@ -40,7 +42,7 @@ case "$MODE" in
     exec claude "$@"
     ;;
   status)
-    echo "로컬 모델(SA_LOCAL_MODEL): $LOCAL_MODEL"
+    if [ -n "$LOCAL_MODEL" ]; then echo "로컬 모델(고정): $LOCAL_MODEL"; else echo "로컬 모델(자동): $(sag-pick 2>/dev/null || echo '?')"; fi
     if curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
       echo "Ollama: ✅ 실행 중"; ollama list 2>/dev/null | grep -iE 'coder|devstral' || true
     else echo "Ollama: ❌ 꺼짐 (sag local 시 자동 기동)"; fi
