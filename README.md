@@ -42,7 +42,7 @@ super-agent/
 ├── ROUTING.md            # 캐스케이드 라우팅 + 비용 규율 (캐싱 함정 포함)
 ├── FALLBACK.md           # 쿼터 소진 → 로컬 폴백 설정
 ├── LOCAL-MODELS.md       # 맥 RAM별 모델 + Ollama 세팅
-├── bin/sa                # 런처/토글 (구독 Claude ↔ 로컬 폴백)
+├── bin/sag                # 런처/토글 (구독 Claude ↔ 로컬 폴백)
 ├── docs/why.md           # 설계 근거 (딥리서치 요약)
 └── templates/            # task · brief · log
 ```
@@ -50,16 +50,16 @@ super-agent/
 ## 빠른 시작
 1. `git clone … && cd super-agent`
 2. `./setup.sh` (Ollama 설치 → 맥 RAM 감지 → 로컬 모델 다운)
-3. `ln -s "$PWD/bin/sa" /usr/local/bin/sa` (폴백 토글을 PATH에)
+3. `ln -s "$PWD/bin/sag" /opt/homebrew/bin/sag` (폴백 토글을 PATH에)
 4. `ORCHESTRATION.md`를 코딩 세션에 규칙으로 물린다
-5. 평소 `sa`(구독 Claude) → 한도 소진 시 `sa local`(무료 로컬)
+5. 평소 `sag`(구독 Claude) → 한도 소진 시 `sag local`(무료 로컬)
 
 ## 폴백 토글 (구독 사용자)
 구독은 프록시로 못 돌린다(Anthropic ToS) → 라우터 대신 **토글**:
 ```bash
-sa            # 평소 = 구독 Claude+Codex+Gemini
-sa local      # 셋 다 한도 소진 시 → 로컬(무료, 16GB=qwen2.5-coder:7b)
-sa status     # 상태
+sag            # 평소 = 구독 Claude+Codex+Gemini
+sag local      # 셋 다 한도 소진 시 → 로컬(무료, 16GB=qwen2.5-coder:7b)
+sag status     # 상태
 ```
 자세히: `FALLBACK.md`.
 

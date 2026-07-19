@@ -71,11 +71,11 @@ EOF
 
 say "폴백 런처 설치 (선택)"
 cat <<'EOF'
-  구독 사용자는 라우터 대신 sa 토글을 씁니다 (구독 프록시는 Anthropic ToS 위반):
-    ln -s "$PWD/bin/sa" /usr/local/bin/sa    # 또는 PATH에 bin/ 추가
-    sa            # 평소 = 구독 Claude
-    sa local      # 한도 소진 시 → 로컬(무료)
-    sa status     # 상태
+  구독 사용자는 라우터 대신 sag 토글을 씁니다 (구독 프록시는 Anthropic ToS 위반):
+    ln -s "$PWD/bin/sag" /opt/homebrew/bin/sag    # 또는 PATH에 bin/ 추가
+    sag            # 평소 = 구독 Claude
+    sag local      # 한도 소진 시 → 로컬(무료)
+    sag status     # 상태
 EOF
 
-say "완료. 남은 것: sa 를 PATH에 넣기 + ORCHESTRATION.md를 세션 규칙으로 물리기."
+say "완료. 남은 것: sag 를 PATH에 넣기 + ORCHESTRATION.md를 세션 규칙으로 물리기."

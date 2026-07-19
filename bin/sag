@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # super-agent 런처/토글 — 평소 구독 Claude, 쿼터 소진 시 로컬로 전환.
+#   ( 명령 이름은 sag = super-aGent. 'sa'는 macOS 시스템 명령이라 피함 )
 #
-#   sa            평소 = CLOUD (구독 Claude+Codex+Gemini 오케스트레이션)
-#   sa local      LOCAL 모드로 Claude Code 실행 (무료, 쿼터 백스톱)
-#   sa cloud      CLOUD 모드로 실행 (기본과 동일)
-#   sa status     현재 모드/로컬 상태 확인
+#   sag            평소 = CLOUD (구독 Claude+Codex+Gemini 오케스트레이션)
+#   sag local      LOCAL 모드로 Claude Code 실행 (무료, 쿼터 백스톱)
+#   sag cloud      CLOUD 모드로 실행 (기본과 동일)
+#   sag status     현재 모드/로컬 상태 확인
 #
 # 구독은 프록시로 못 돌린다(Anthropic ToS, 2026-02). 그래서 "라우터"가 아니라
-# 이 토글이 정답 — 한도 메시지를 보면 `sa local`로 이어서 작업.
+# 이 토글이 정답 — 한도 메시지를 보면 `sag local`로 이어서 작업.
 set -euo pipefail
 
 LOCAL_MODEL="${SA_LOCAL_MODEL:-qwen2.5-coder:7b}"   # 16GB=7b(빠름). 24GB면 devstral 로 override
@@ -40,8 +41,8 @@ case "$MODE" in
     echo "로컬 모델(SA_LOCAL_MODEL): $LOCAL_MODEL"
     if curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
       echo "Ollama: ✅ 실행 중"; ollama list 2>/dev/null | grep -iE 'coder|devstral' || true
-    else echo "Ollama: ❌ 꺼짐 (sa local 시 자동 기동)"; fi
+    else echo "Ollama: ❌ 꺼짐 (sag local 시 자동 기동)"; fi
     ;;
   *)
-    echo "사용법: sa [cloud|local|status]"; exit 1 ;;
+    echo "사용법: sag [cloud|local|status]"; exit 1 ;;
 esac
