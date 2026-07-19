@@ -42,15 +42,26 @@ super-agent/
 ├── ROUTING.md            # 캐스케이드 라우팅 + 비용 규율 (캐싱 함정 포함)
 ├── FALLBACK.md           # 쿼터 소진 → 로컬 폴백 설정
 ├── LOCAL-MODELS.md       # 맥 RAM별 모델 + Ollama 세팅
+├── bin/sa                # 런처/토글 (구독 Claude ↔ 로컬 폴백)
 ├── docs/why.md           # 설계 근거 (딥리서치 요약)
 └── templates/            # task · brief · log
 ```
 
 ## 빠른 시작
 1. `git clone … && cd super-agent`
-2. `./setup.sh` (Ollama·라우터 설치 → 모델 다운 → 설정 작성)
-3. `ORCHESTRATION.md`를 코딩 세션에 규칙으로 물린다
-4. `templates/`로 작업 폴더 만들고 목표 한 줄 → 맡긴다
+2. `./setup.sh` (Ollama 설치 → 맥 RAM 감지 → 로컬 모델 다운)
+3. `ln -s "$PWD/bin/sa" /usr/local/bin/sa` (폴백 토글을 PATH에)
+4. `ORCHESTRATION.md`를 코딩 세션에 규칙으로 물린다
+5. 평소 `sa`(구독 Claude) → 한도 소진 시 `sa local`(무료 로컬)
+
+## 폴백 토글 (구독 사용자)
+구독은 프록시로 못 돌린다(Anthropic ToS) → 라우터 대신 **토글**:
+```bash
+sa            # 평소 = 구독 Claude+Codex+Gemini
+sa local      # 셋 다 한도 소진 시 → 로컬(무료, 16GB=qwen2.5-coder:7b)
+sa status     # 상태
+```
+자세히: `FALLBACK.md`.
 
 ## 라이선스
 Apache-2.0 — `LICENSE` / `NOTICE`. © 2026 AscendraAI.

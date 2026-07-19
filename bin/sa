@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# super-agent 런처/토글 — 평소 구독 Claude, 쿼터 소진 시 로컬로 전환.
+#
+#   sa            평소 = CLOUD (구독 Claude+Codex+Gemini 오케스트레이션)
+#   sa local      LOCAL 모드로 Claude Code 실행 (무료, 쿼터 백스톱)
+#   sa cloud      CLOUD 모드로 실행 (기본과 동일)
+#   sa status     현재 모드/로컬 상태 확인
+#
+# 구독은 프록시로 못 돌린다(Anthropic ToS, 2026-02). 그래서 "라우터"가 아니라
+# 이 토글이 정답 — 한도 메시지를 보면 `sa local`로 이어서 작업.
+set -euo pipefail
+
+LOCAL_MODEL="${SA_LOCAL_MODEL:-qwen2.5-coder:7b}"   # 16GB=7b(빠름). 24GB면 devstral 로 override
+OLLAMA_URL="http://localhost:11434"
+
+ensure_ollama() {
+  if ! curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
+    echo "  · Ollama 데몬 기동…"; (ollama serve >/tmp/ollama-serve.log 2>&1 &) ; sleep 2
+  fi
+}
+
+MODE="${1:-cloud}"; shift || true
+case "$MODE" in
+  local)
+    ensure_ollama
+    export ANTHROPIC_BASE_URL="$OLLAMA_URL"
+    export ANTHROPIC_API_KEY="ollama"
+    export ANTHROPIC_MODEL="$LOCAL_MODEL"
+    export ANTHROPIC_SMALL_FAST_MODEL="$LOCAL_MODEL"
+    export OLLAMA_KEEP_ALIVE="30m"           # 모델을 메모리에 유지 → 매 호출 로드 지연 제거
+    echo "▶ LOCAL 모드 · $LOCAL_MODEL (무료·로컬). 스코프 좁은 작업 위주로. 어려운 건 유료 복구 후."
+    exec claude "$@"
+    ;;
+  cloud)
+    unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL 2>/dev/null || true
+    echo "▶ CLOUD 모드 · 구독 Claude"
+    exec claude "$@"
+    ;;
+  status)
+    echo "로컬 모델(SA_LOCAL_MODEL): $LOCAL_MODEL"
+    if curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
+      echo "Ollama: ✅ 실행 중"; ollama list 2>/dev/null | grep -iE 'coder|devstral' || true
+    else echo "Ollama: ❌ 꺼짐 (sa local 시 자동 기동)"; fi
+    ;;
+  *)
+    echo "사용법: sa [cloud|local|status]"; exit 1 ;;
+esac

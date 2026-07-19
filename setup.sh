@@ -45,7 +45,7 @@ RAM_GB=$(( RAM_BYTES / 1024 / 1024 / 1024 ))
 say "감지된 통합 메모리: ${RAM_GB}GB"
 if   (( RAM_GB >= 30 )); then MODEL="devstral";            NOTE="24GB+ : 에이전트 코딩 특화";
 elif (( RAM_GB >= 22 )); then MODEL="devstral";            NOTE="24GB : 에이전트 코딩 특화";
-else                          MODEL="qwen2.5-coder:14b";   NOTE="16GB : 코드 특화, 가벼움";
+else                          MODEL="qwen2.5-coder:7b";    NOTE="16GB : 빠른 폴백(실측 ~26 tok/s, 14B의 2배)";
 fi
 echo "권장 모델: ${MODEL}  (${NOTE})"
 read -r -p "이 모델을 지금 받을까요? (다운로드 수 GB) [y/N] " ans
@@ -69,4 +69,13 @@ cat <<'EOF'
   ※ 두 도구는 월 단위로 바뀌어 자동 설치를 넣지 않았습니다. FALLBACK.md 참고.
 EOF
 
-say "완료. 남은 것: 라우터 연결(FALLBACK.md) + ORCHESTRATION.md를 세션 규칙으로 물리기."
+say "폴백 런처 설치 (선택)"
+cat <<'EOF'
+  구독 사용자는 라우터 대신 sa 토글을 씁니다 (구독 프록시는 Anthropic ToS 위반):
+    ln -s "$PWD/bin/sa" /usr/local/bin/sa    # 또는 PATH에 bin/ 추가
+    sa            # 평소 = 구독 Claude
+    sa local      # 한도 소진 시 → 로컬(무료)
+    sa status     # 상태
+EOF
+
+say "완료. 남은 것: sa 를 PATH에 넣기 + ORCHESTRATION.md를 세션 규칙으로 물리기."
