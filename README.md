@@ -1,133 +1,111 @@
 # super-agent
 
-**AI에게 코딩을 맡기되, 실력은 최대로 뽑고 돈은 최소로 쓰는 방법.**
+**A cost-optimized, multi-model coding-agent orchestration.**
+Run Claude as the lead, spend the least, and keep working on a free local model when your paid quota runs out.
 
-클로드를 중심에 두고, 비용이 새는 길목을 막고, 유료 사용량이 바닥나면 내 컴퓨터 안의 무료 모델이 자연스럽게 이어받도록 짜 놓은 작은 도구 모음입니다.
+**English** | [한국어](README_ko.md)
 
-> 거창한 프레임워크가 아닙니다. 새로 깔 서버도, 백그라운드에서 도는 프로그램도 없습니다.
-> 그냥 **파일 몇 개와 "일하는 방식"**입니다. 모든 판단·승인·기록이 파일로 남습니다.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Apple%20Silicon-lightgrey) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
 
----
+> Not a framework. No server to install, nothing running in the background.
+> Just a few files and a **way of working** — every decision, approval, and record lives on disk.
 
-## 왜 만들었나 — 돈이 새는 곳부터 이야기하면
-
-AI로 코딩을 해 보면 편하긴 한데, 두 가지가 계속 걸립니다.
-
-하나는 **비용**입니다. 대부분의 사람은 크든 작든 모든 일을 제일 비싼 모델에게 시킵니다. 그런데 실제로 해 보면, 코딩 작업의 상당수는 그렇게까지 똑똑한 모델이 필요하지 않습니다. 간단한 수정, 반복 작업, 뻔한 코드 같은 건 훨씬 싼 모델로도 충분합니다. 결국 **안 써도 될 곳에 비싼 값을 치르고 있는 셈**이죠.
-
-또 하나는 **한도**입니다. 유료 요금제에는 사용량 한도가 있어서, 한창 몰입해서 작업하다가 "오늘 사용량을 다 쓰셨습니다" 하고 막히는 순간이 옵니다. 그때 손을 놓고 몇 시간을 기다리는 건 꽤 아깝습니다.
-
-super-agent는 이 두 가지를 풀려고 만들었습니다. **비싼 모델은 정말 필요한 데만 쓰고, 한도가 바닥나도 작업이 끊기지 않게** 하는 것 — 그게 전부입니다.
+**Top model where it counts. Cheap models everywhere else. Local when the meter runs out.** — that's the whole philosophy.
 
 ---
 
-## 큰 그림 — 팀으로 생각하면 쉽습니다
+## What is super-agent?
 
-혼자 일하는 AI 하나를 떠올리지 말고, **작은 팀**을 떠올려 보세요.
+super-agent turns a single coding session (Claude Code) into a small, cost-aware **team**: a strong **Claude** lead, cheaper **Codex / Gemini** helpers, and a free **local model** running on your own machine. An orchestrator routes each task to the cheapest tier that can do it, and escalates only when it must.
 
-- **클로드**는 실력이 제일 좋은 팀원입니다. 그만큼 제일 비싸죠. 그래서 어려운 판단과 설계를 맡깁니다.
-- **코덱스·제미나이**는 보조 팀원입니다. 구현을 거들고, 긴 문서를 읽고, 다른 시각으로 검토합니다.
-- **내 컴퓨터 안의 로컬 모델**은 공짜로 일해 주는 팀원입니다. 느리고 덜 똑똑하지만, 돈이 안 들고 사용량 한도도 없습니다.
+It solves two everyday pains:
 
-그리고 이 팀을 지휘하는 **팀장(오케스트레이터)**이 있습니다. 팀장은 일이 들어오면 "이건 누구에게 맡기는 게 가장 싸고 적절한가"를 먼저 판단합니다. 팀장의 머릿속 판단에는 돈이 들지 않으니, 되도록 팀장이 스스로 정리하고 꼭 필요할 때만 팀원을 부릅니다.
+- **Cost** — most people send every task to the priciest model. In practice ~85% of coding tokens don't need the top tier. Send the easy work down; keep Claude for the hard judgment.
+- **Quota** — paid plans have usage limits. When you hit the wall mid-flow, a local model takes over so you don't stop and wait.
 
-여기서 중요한 건 — **모든 대화가 파일로 남는다**는 점입니다. 지금 무슨 작업을 하는지, 무엇을 승인했는지, 어떤 결정을 왜 내렸는지가 전부 폴더 안에 파일로 쌓입니다. 그래서 중간에 세션이 꺼져도 이어서 할 수 있고, 나중에 "왜 이렇게 했더라"를 되짚을 수 있습니다.
+## Core idea: cheapest tier first
 
----
+```
+local (free)  →  Codex  →  Gemini  →  Claude (top)
+        try cheap first, escalate only when the result isn't good enough
+```
 
-## 이렇게 설계했고, 왜 그랬는지
+| Tier | Role | Cost |
+|---|---|---|
+| **Claude** | hard design · debugging · architecture · orchestration | high → used sparingly |
+| **Codex / Gemini** | implementation help · long documents · third-party review | low |
+| **Local** (Ollama: Qwen / Devstral) | narrow mechanical coding · quota backstop | free (slower) |
 
-super-agent가 이런 모양인 건 우연이 아닙니다. 2026년의 최신 연구와 실제 측정을 하나씩 따져 가며 내린 결정들이죠. 핵심을 다섯 가지로 풀어 보겠습니다.
+**Memory is the filesystem.** There is no runtime state — every task, approval, and verdict is a file on disk. A dead session resumes by reading one folder.
 
-### 1. 클로드가 대장을 맡되, 팀을 함부로 늘리지 않는다
+## Get Started
 
-"실력 좋은 대장이 지휘하고 싼 팀원들이 거드는" 구조는 실제로 효과가 있습니다. Anthropic의 실측에서도 이 방식이 대장 혼자 일하는 것보다 90% 넘게 나은 결과를 냈습니다.
+### Requirements
+- macOS (Apple Silicon)
+- [Claude Code](https://claude.com/claude-code) — the orchestration harness
+- [Ollama](https://ollama.com) — runs the local model (installed for you by `setup.sh`)
 
-그런데 함정이 있습니다. 그 90%는 **'조사·연구' 같은 일**에서 나온 숫자입니다. **코딩은 사정이 다릅니다.** 코딩에서 팀을 여럿 굴리면 토큰(=비용)을 15배까지 쓰면서도, 팀원들끼리 손발이 안 맞아 오히려 결과가 나빠질 수 있다는 연구가 여럿 있습니다. 같은 예산이면 대장 하나가 쭉 끌고 가는 편이 낫다는 거죠.
-
-그래서 super-agent는 **강한 대장(클로드) 하나가 흐름을 이어가고**, 정말로 따로 떼어낼 수 있는 일(코드 검토, 서로 독립된 모듈 작업)만 팀원에게 나눕니다. "에이전트 여러 개"는 멋있어 보이지만, 코딩에선 아껴 씁니다.
-
-### 2. 비용은 "안 중요한 일을 싼 곳으로 보내서" 줄인다
-
-측정해 보면, 클로드 코드에서 쓰는 토큰의 약 85%는 최상위 모델이 필요 없는 일에 쓰입니다. 그러니 **쉬운 일은 싼 모델에게, 어려운 판단만 클로드에게** 보내면 비용이 크게 줄어듭니다. 실제로 이렇게 나눠 쓴 사람들이 절반 넘게 아꼈다는 기록도 있습니다.
-
-여기에 한 가지 더, **캐싱**이라는 게 있습니다. 같은 배경 설명을 매번 다시 읽히지 않고 "메모해 뒀다가 재사용"하면 그 부분은 최대 90%까지 싸집니다. 다만 여기에도 함정이 있는데 — **하나의 대화를 여러 회사의 모델에 이리저리 쪼개 보내면 이 메모(캐시)가 깨져서 오히려 10배 비싸집니다.** 그래서 super-agent는 **대장의 대화는 한 곳에서 쭉 이어가고**, 값싼 모델로 넘기는 건 "어차피 따로 떼어낸 일"에만 적용합니다. 아끼려다 오히려 더 쓰는 일이 없게 하려는 겁니다.
-
-### 3. 유료가 바닥나면 내 컴퓨터가 이어받는다 — 다만 '급할 때의 백스톱'이다
-
-요금제 한도에 막혀도 작업이 멈추지 않도록, 내 컴퓨터 안의 무료 모델이 이어받게 해 뒀습니다.
-
-그런데 왜 "알아서 척척 자동 전환"이 아니라, `sag local`이라고 한 번 쳐 주는 **토글** 방식일까요? 정직하게 만들려다 보니 그렇게 됐습니다. Anthropic은 2026년 2월부터 **구독 요금제를 다른 프로그램(중계 프록시 같은 것)에 물려 자동 전환하는 걸 약관 위반**으로 정했습니다. 그러니 구독 사용자가 규칙을 어기지 않고 할 수 있는 방법은 — 한도를 만났을 때 로컬로 넘기는 **깔끔한 스위치**뿐입니다. (요금제가 아니라 API 키를 쓰는 분이라면 진짜 자동 전환도 가능한데, 그건 사용한 만큼 돈이 나갑니다.)
-
-그리고 로컬 모델은 클라우드 클로드보다 느리고 덜 똑똑합니다. 그래서 super-agent에서 로컬은 **주력이 아니라 백스톱**입니다. 즉 "한도가 터졌을 때 좁고 기계적인 작업을 이어서 해 주는" 역할이지, 클로드를 대체하는 물건이 아닙니다. 이 점은 솔직하게 짚어 둡니다.
-
-### 4. 지루한 대량 작업은 대장이 "로컬로 넘길까요?" 하고 먼저 물어본다
-
-한도가 아직 남았더라도, 어떤 일은 굳이 비싼 클로드로 할 이유가 없습니다. 예를 들어 함수 마흔 개에 설명 주석을 다는 일, 문자열 서른 개를 번역하는 일처럼 **판단은 적고 양만 많은 작업**이 그렇죠.
-
-그래서 대장은 이런 일을 알아채면 곧바로 하지 않고, **먼저 물어봅니다** — "이건 기계적인 대량 작업이라 무료 로컬로 돌려서 사용량을 아낄 수 있어요. 그렇게 할까요?" 그리고 승인을 받으면 무료 일꾼에게 넘긴 뒤, 결과를 검토해서 반영합니다. **몰래 바꾸지 않고 꼭 확인을 받는 것**이 핵심입니다. 약한 모델에게 조용히 넘겼다가 품질이 떨어지는 일을 막으려는 것이죠.
-
-### 5. 로컬 모델은 컴퓨터가 안 느려지게 알아서 고른다
-
-로컬 모델은 클수록 똑똑하지만, 그만큼 메모리를 많이 차지해서 **컴퓨터가 버벅이기 시작합니다.** 실제로 16GB 맥에서 큰 모델(14B)을 올리면 눈에 띄게 느려집니다.
-
-그래서 super-agent는 **총 메모리가 아니라 "지금 남아 있는" 메모리**를 재서, 컴퓨터가 느려지지 않는 선에서 가장 큰 모델을 자동으로 고릅니다. 브라우저와 앱을 잔뜩 띄워 놨으면 작고 빠른 모델을, 여유가 있으면 더 똑똑한 모델을 알아서 선택하죠. 실제로 앱이 많은 16GB 맥에서는 작지만 빠른 모델(초당 50토큰 이상, 큰 모델의 네 배 속도)을 골라, **똑똑함은 조금 양보하더라도 쾌적함을 지킵니다.** 앱을 좀 닫으면 다음번엔 더 똑똑한 모델을 알아서 씁니다.
-
----
-
-## 빠른 시작
-
+### Installation
 ```bash
-git clone <이 저장소 주소> && cd super-agent
+git clone https://github.com/AscendraAI/super-agent && cd super-agent
 
-./setup.sh            # Ollama 설치 → 내 맥에 맞는 로컬 모델 준비
-ln -s "$PWD/bin/sag" /opt/homebrew/bin/sag
+./setup.sh                                    # installs Ollama, picks & pulls a local model that fits your Mac
+ln -s "$PWD/bin/sag"      /opt/homebrew/bin/sag
 ln -s "$PWD/bin/sag-run"  /opt/homebrew/bin/sag-run
 ln -s "$PWD/bin/sag-pick" /opt/homebrew/bin/sag-pick
 ```
 
-그다음, 평소에는 이렇게 씁니다.
+### Configuration
+- Load `ORCHESTRATION.md` as your session's rules (e.g. as the project's `CLAUDE.md`). The orchestrator reads it on every task.
+- The local model is chosen **automatically** by available memory — no config needed. Pin one with `SA_LOCAL_MODEL=devstral sag local`.
+
+## Usage
 
 ```bash
-sag            # 평소 = 구독 클로드 (제일 똑똑하게)
-sag local      # 사용량이 바닥나면 → 무료 로컬로 이어서 (자동으로 적당한 모델 선택)
-sag status     # 지금 어떤 로컬 모델이 적당한지 확인
+sag            # normal — subscription Claude (smartest)
+sag local      # quota exhausted → free local model (auto-sized to your free RAM)
+sag status     # which local model fits right now
 ```
 
-운영 규칙(`ORCHESTRATION.md`)을 코딩 세션에 규칙으로 물려 두면, 대장이 위의 판단들을 알아서 해 줍니다.
+Delegate a boring, high-volume job straight to the local model:
 
----
-
-## 솔직하게, 이런 한계가 있습니다
-
-좋은 점만 말하면 신뢰가 안 가니, 경계도 분명히 적어 둡니다.
-
-- **로컬은 클라우드를 대체하지 못합니다.** 좁고 기계적인 작업(단일 파일 수정, 버그 잡기, 주석 달기)은 잘하지만, 여러 파일에 걸친 복잡한 설계는 클로드가 필요합니다.
-- **로컬 자동 전환은 완전 무인이 아닙니다.** 구독 사용자는 약관 때문에 한도를 만났을 때 직접 `sag local`을 쳐 줘야 합니다.
-- **메모리가 곧 지능의 한계입니다.** 앱을 많이 띄운 16GB 컴퓨터에서는 작은 모델까지만 쾌적합니다. 이건 도구의 문제가 아니라 하드웨어의 몫입니다.
-- **연동 도구는 자주 바뀝니다.** 로컬·라우터 관련 도구는 월 단위로 갱신되니, 설정 전에 각 공식 문서로 최신을 한 번 확인하세요.
-
-이 한계들을 알고 쓰면, super-agent는 **"평소엔 최고 성능, 비용은 최소, 한도가 터져도 멈추지 않는"** 작업 흐름을 꽤 정직하게 만들어 줍니다.
-
----
-
-## 구성
-
-```
-super-agent/
-├── README.md             이 문서
-├── ORCHESTRATION.md      운영 규칙 (대장이 읽는 규칙)
-├── ROUTING.md            비용 규율 — 어떤 일을 누구에게, 캐싱 함정
-├── FALLBACK.md           한도 소진 시 로컬로 넘기는 방법
-├── LOCAL-MODELS.md       내 맥에 맞는 로컬 모델과 세팅
-├── SETUP.md · setup.sh   세팅 안내와 자동 설치
-├── bin/sag               런처/토글 (구독 클로드 ↔ 로컬)
-├── bin/sag-run           로컬 일꾼 — 지루한 대량 작업 위임
-├── bin/sag-pick          지금 메모리에 맞는 로컬 모델 자동 선택
-├── docs/why.md           설계 근거 (연구·측정 요약)
-└── templates/            작업 폴더 양식 (task · brief · log)
+```bash
+sag-run "Translate these 5 UI strings to natural Korean: Save, Cancel, Delete, Loading, Done"
 ```
 
-## 라이선스
+And in a normal Claude session, the orchestrator will **offer** to delegate tedious bulk work for you:
 
-Apache-2.0 — `LICENSE` / `NOTICE`. © 2026 AscendraAI.
+> "This is a mechanical bulk task — I can run it on the free local model to save quota. Go ahead?"
+
+## Why it's built this way
+
+Every choice is grounded in 2026 research and real measurement. In short:
+
+1. **Claude leads, but don't over-spawn agents.** A strong lead + cheap workers beats a lone strong agent (Anthropic measured +90%) — but that was *research* work. For *coding*, multi-agent burns ~15× the tokens and can get *worse* from coordination overhead. So: one strong Claude thread; subagents only for genuinely parallel work.
+2. **Cut cost by routing, not by weakening.** ~85% of tokens don't need the top model. Prompt caching saves up to ~90% — but fragmenting one conversation across providers *breaks* the cache and costs ~10× more, so the main thread stays in one place.
+3. **Local is a backstop, not a replacement.** It covers ~80% of routine work, slower and less sharp. Auto-proxying a subscription would violate Anthropic's ToS, so switching is an honest toggle.
+4. **Tedious bulk work is offered to local — with your consent.** The orchestrator asks first; it never silently downgrades.
+5. **The local model is auto-sized to free memory** so your computer doesn't bog down.
+
+Full reasoning with citations: [`docs/why.md`](docs/why.md).
+
+## Honest limits
+
+- Local can't match the cloud on complex, multi-file work — it's a backstop.
+- Subscription users switch to local **manually** (`sag local`) — that's the ToS-clean path.
+- On a busy 16GB Mac, only small local models stay smooth. Memory is the ceiling, not the tool.
+- Router/local tools change monthly — check each project's latest docs before configuring.
+
+## Docs
+
+| File | What |
+|---|---|
+| [`ORCHESTRATION.md`](ORCHESTRATION.md) | operating rules the orchestrator follows |
+| [`ROUTING.md`](ROUTING.md) | cost discipline + the caching trap |
+| [`FALLBACK.md`](FALLBACK.md) | quota exhaustion → local |
+| [`LOCAL-MODELS.md`](LOCAL-MODELS.md) | models per Mac + Ollama setup |
+| [`docs/why.md`](docs/why.md) | design rationale (research + measurements) |
+
+## License
+
+Apache-2.0 — see [`LICENSE`](LICENSE) / [`NOTICE`](NOTICE). © 2026 AscendraAI.
