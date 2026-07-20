@@ -92,7 +92,7 @@ effi route --compact "…"
 | review | 적대 리뷰 리포트 | **다른 컨텍스트** Sonnet/Opus |
 | security | 위협 모델·패치 | Opus only |
 | deploy | 파이프라인·런북·체크리스트 | Sonnet; prod는 승인 게이트 |
-| bulk | 번역·docstring·스캐폴드 | **Local** (`effi-run`) |
+| bulk | 번역·docstring·스캐폴드 | **Local** (`effi-run` 생성 / `effi-edit` 편집) |
 
 L/XL만 긴 계획. 계획은 파일에 고정(컨텍스트 잘림 대비).
 
@@ -100,9 +100,28 @@ L/XL만 긴 계획. 계획은 파일에 고정(컨텍스트 잘림 대비).
 
 - **메인이 파일 쓰기.** 서브는 읽기·초안·리뷰.
 - 예외: 파일 집합이 **완전 분리**된 독립 모듈 + 사용자 승인 시만 병렬 구현.
-- 기계 대량 → 확인 후 `effi run -t "번역" "…"`.
+- 기계 대량 → 확인 후 로컬 티어:
+  - **생성형** (stdout만): `effi run -t "번역" "…"`
+  - **파일편집형** (사이드카+diff): `effi edit path "지시"` → 검토 후 `effi edit --apply-only path`
 - 위임 brief: `templates/brief.md` (목표·경로·하지 말 것·노력 예산).
 - Claude 계정: 세션 시작 시 `effi`가 threshold 기준으로 자동 선택.
+
+#### 로컬 파일편집 (`effi-edit`) — 캐스케이드 최하단
+
+파일편집형 대량작업도 **싼 티어부터**:
+
+| 티어 | 도구 | 언제 |
+|---|---|---|
+| Local (free) | `effi-edit` | 좁은 스코프·기계적 수정, 쿼터 절약/소진 |
+| Mid | Codex / Gemini 하니스 | 로컬이 약하거나 파일이 크기 가드 초과 |
+| Top | Claude (메인 스레드) | 다중파일·난도 높은 판단 |
+
+규약:
+
+1. `effi-edit`는 원본을 건드리지 않는다 → `<file>.effi-new` + unified diff.
+2. 오케스트레이터/사용자가 diff를 본 뒤 `--apply-only`(또는 `--apply`)로만 반영.
+3. 파일이 컨텍스트 안전선(기본 8000자)을 넘으면 **거부** — 잘라서 편집하지 않는다 (잘림 = 데이터 손실).
+4. 작은 모델 출력이 비면/깨지면 같은 티어 ≤2회 후 mid로 승격.
 
 ### 4) VERIFY
 
@@ -128,12 +147,12 @@ L/XL만 긴 계획. 계획은 파일에 고정(컨텍스트 잘림 대비).
   ├─ 격리 서브: Codex/Terra 로 구현 초안 (결과 파일만)
   ├─ 격리 서브: Gemini 로 디자인/롱컨텍스트 요약
   ├─ 격리 서브: Grok 로 실시간 리서치
-  ├─ 로컬: effi-run 기계 작업
+  ├─ 로컬: effi-run (생성) · effi-edit (파일편집·사이드카)
   └─ 리뷰: 새 스레드 + 다른 모델 가능 (생성 컨텍스트 공유 금지)
 ```
 
 **금지:** 메인 대화를 도중 OpenAI↔Claude로 갈아끼워 캐시 파괴.  
-**허용:** 세션 경계·서브·`effi-run`에서 프로바이더 변경.
+**허용:** 세션 경계·서브·`effi-run` / `effi-edit`에서 프로바이더 변경.
 
 ---
 

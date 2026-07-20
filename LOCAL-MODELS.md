@@ -8,7 +8,9 @@
 effi pick                         # 일반 최선
 effi pick --task "40개 번역"      # bulk → 작고 빠른 쪽 편향
 effi pick --task "좁은 버그픽스"  # implement_narrow → 더 강한 쪽(RAM 허용 시)
-effi run -t "번역" "…"
+effi run -t "번역" "…"                 # 생성
+effi edit path.py "docstring 추가"     # 파일편집 (사이드카)
+effi edit --apply-only path.py
 EFFI_LOCAL_MODEL=devstral effi local   # 강제 핀(예외)
 ```
 
@@ -35,4 +37,5 @@ effi catalog bump
 
 ## 한계
 
-로컬은 클라우드 대체 아님. 좁은 작업·쿼터 백스톱·프라이버시. 소형+MCP 폭주 금지 → `effi local`은 MCP 차단.
+로컬은 클라우드 대체 아님. 좁은 작업·쿼터 백스톱·프라이버시. 소형+MCP 폭주 금지 → `effi local`은 MCP 차단.  
+`effi-edit`는 기본 8k자 초과 파일을 거부한다 (조용한 잘림 방지).

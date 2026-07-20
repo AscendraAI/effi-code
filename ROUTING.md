@@ -62,7 +62,9 @@ start_tier (TRIAGE)
 
 ```bash
 effi pick --task "번역 40개"     # RAM + 태스크 역할
-effi run -t "번역" "…"
+effi run -t "번역" "…"           # 생성 (stdout)
+effi edit path.py "타입 힌트"    # 파일편집 → .effi-new + diff
+effi edit --apply-only path.py   # 검토 후 반영
 ```
 
 고정 `EFFI_LOCAL_MODEL`은 오버라이드일 뿐 기본값이 아님.

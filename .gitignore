@@ -25,6 +25,9 @@ __pycache__/
 # 로컬 모델
 *.gguf
 
+# effi-edit sidecar drafts (review before --apply)
+*.effi-new
+
 # bkit 플러그인 상태 (공개 안 함)
 .bkit/
 .claude/

@@ -58,7 +58,7 @@ else
 fi
 
 # 5) bin 실행 권한
-chmod +x bin/effi bin/effi-run bin/effi-pick bin/effi-new bin/effi-classify bin/effi-review \
+chmod +x bin/effi bin/effi-run bin/effi-edit bin/effi-pick bin/effi-new bin/effi-classify bin/effi-review \
   bin/effi-route bin/effi-accounts bin/effi-catalog bin/effi-init bin/effi-doctor \
   bin/effi-use bin/effi-log bin/effi-mode 2>/dev/null || true
 

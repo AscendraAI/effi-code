@@ -9,7 +9,7 @@
 #   effi route "…"       task → optimal model (claude/codex/gemini/grok/local)
 #   effi accounts …      multi-account rotation
 #   effi catalog …       biweekly model catalog
-#   effi pick / run / new / review / classify
+#   effi pick / run / edit / new / review / classify
 #
 # ToS: never proxy subscription OAuth through third-party routers.
 set -euo pipefail
@@ -118,6 +118,7 @@ PY
   catalog) exec "$BIN/effi-catalog" "$@" ;;
   pick) exec "$BIN/effi-pick" "$@" ;;
   run) exec "$BIN/effi-run" "$@" ;;
+  edit) exec "$BIN/effi-edit" "$@" ;;
   new) exec "$BIN/effi-new" "$@" ;;
   classify) exec "$BIN/effi-classify" "$@" ;;
   review) exec "$BIN/effi-review" "$@" ;;
@@ -145,7 +146,7 @@ Sessions
 
 Routing
   effi route|use "task…"   model pick (respects active mode)
-  effi pick · run · …
+  effi pick · run · edit · …
 
 Accounts / catalog / tasks
   effi accounts … · catalog … · new … · log … · review …
@@ -154,7 +155,7 @@ Rules: ORCHESTRATION.md  Modes: catalog/modes.json
 EOF
     ;;
   *)
-    echo "usage: effi [cloud|local|mode|status|doctor|init|route|use|log|accounts|catalog|pick|run|new|review|help]" >&2
+    echo "usage: effi [cloud|local|mode|status|doctor|init|route|use|log|accounts|catalog|pick|run|edit|new|review|help]" >&2
     exit 1
     ;;
 esac

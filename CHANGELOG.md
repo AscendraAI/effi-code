@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.4.0 — 2026-07-21
+
+### Added
+- **`effi-edit`** — local-tier **file-edit** delegation (twin of `effi-run` generate)
+  - Full-file rewrite → `<file>.effi-new` sidecar (non-destructive by default)
+  - Unified diff on stdout; `--apply` / `--apply-only` to accept
+  - Size guard (default 8000 chars) refuses large files — no quiet truncation
+  - Fence stripping for messy model output; `effi pick` for model choice
+- Core helpers: `strip_code_fences`, `check_edit_size`, `sidecar_path`, `unified_diff`, `ollama_chat`
+- ORCHESTRATION cascade note: bulk file edits → local `effi-edit` first
+
 ## 4.3.1 — 2026-07-21
 
 ### Added

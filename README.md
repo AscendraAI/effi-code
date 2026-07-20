@@ -4,7 +4,7 @@
 
 ### Cost-aware multi-provider coding orchestration
 
-**CLI:** `effi` · **Version:** [`4.3.1`](VERSION)
+**CLI:** `effi` · **Version:** [`4.4.0`](VERSION)
 
 Route every task to the right model among **Claude · Codex (OpenAI) · Gemini · Grok · Local**,  
 run under one of three modes — **Apex / Cruise / Sip** — and keep working when quota runs out.
@@ -15,7 +15,7 @@ run under one of three modes — **Apex / Cruise / Sip** — and keep working wh
 [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
-![Version](https://img.shields.io/badge/version-4.3.1-green)
+![Version](https://img.shields.io/badge/version-4.4.0-green)
 
 [Quick start](#quick-start) ·
 [Modes](#modes-apex--cruise--sip) ·
@@ -194,7 +194,9 @@ effi                  # subscription / plan login
 # … hit usage limit …
 effi local            # free local backend (MCP stripped for small models)
 effi pick --task "bulk translate"
-effi run -t "translate" "…"
+effi run -t "translate" "…"                 # generate (stdout)
+effi edit path.py "add type hints"          # rewrite → path.py.effi-new + diff
+effi edit --apply-only path.py              # accept after review
 ```
 
 **Optional — multi-account / API rotation** (when you *do* have keys or isolated OAuth profiles):
@@ -235,7 +237,8 @@ See [`docs/accounts.md`](docs/accounts.md).
 | `effi new <name> [goal]` | Scaffold task folder under **project root** |
 | `effi log <name> <TAG> <msg>` | Append to `tasks/<name>/log.md` |
 | `effi review [-o dir]` | Clean-context review pack (diff + brief) |
-| `effi pick` / `effi run` | Local model pick / mechanical worker |
+| `effi pick` / `effi run` | Local model pick / mechanical **generate** worker |
+| `effi edit <file> "…"` | Local **file rewrite** → `.effi-new` sidecar + diff |
 | `effi accounts …` | Multi-account threshold rotation |
 | `effi catalog …` | Biweekly model catalog status / research / bump |
 | `effi status` | Snapshot: mode, project, Ollama, accounts |
@@ -314,6 +317,7 @@ Highlights:
 ## Honest limits
 
 - Local models do not match cloud on hard multi-file work.  
+- `effi-edit` refuses large files (default 8 k chars) so small models never quiet-truncate.  
 - Subscription users switch to local **manually** (`effi local`) — ToS-clean.  
 - Busy 16 GB machines stay on small local models — memory is the ceiling.  
 - Agent Teams (Claude Code experimental) are optional and expensive — XL only.  

@@ -28,7 +28,7 @@ effi mode check "task…"      # importance → offer switch
 3. On new work: `effi route "<task>"` (or `effi use`).
 4. **Single writer**. Helpers return **paths + short summaries** only.
 5. Non-trivial diffs: **clean-context review** — never self-review in the same context.
-6. Mechanical bulk: **ask**, then `effi run` (Cruise/Sip). In **Apex**, prefer cloud cheap/mid over local.
+6. Mechanical bulk: **ask**, then `effi run` (generate) or `effi edit` (file rewrite → sidecar). Cruise/Sip. In **Apex**, prefer cloud cheap/mid over local.
 7. Keep **main thread on Claude** for prompt-cache continuity.
 8. Log TRIAGE / MODE / DECISION / VERIFICATION / COMPLETE.
 
@@ -39,7 +39,7 @@ effi mode check "task…"      # importance → offer switch
 | `effi mode …` | Apex / Cruise / Sip |
 | `effi route` / `effi use` | Task → model (mode-aware) |
 | `effi accounts …` | Multi-account rotation |
-| `effi pick` / `run` / `new` / `review` / `log` | Workers & tasks |
+| `effi pick` / `run` / `edit` / `new` / `review` / `log` | Workers & tasks |
 
 ## Domain cheat sheet
 
@@ -47,7 +47,7 @@ effi mode check "task…"      # importance → offer switch
 - **implement/test/refactor/deploy** → Claude Sonnet (mid, main thread)
 - **design/visual** → Gemini
 - **research/realtime** → Gemini Pro or Grok+search
-- **bulk** → Local auto
+- **bulk** → Local auto (`effi run` / `effi edit`)
 - **review** → fresh context, preferably different model
 
 ## Hard no

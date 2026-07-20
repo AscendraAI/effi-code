@@ -4,7 +4,7 @@
 
 ### 비용을 의식한 멀티 프로바이더 코딩 오케스트레이션
 
-**CLI:** `effi` · **버전:** [`4.3.1`](VERSION)
+**CLI:** `effi` · **버전:** [`4.4.0`](VERSION)
 
 **Claude · Codex (OpenAI) · Gemini · Grok · Local** 중 업무에 맞는 모델로 라우팅하고,  
 **Apex / Cruise / Sip** 세 모드로 성능·비용을 조절하며, 쿼터가 바닥나도 작업을 이어갑니다.
@@ -15,7 +15,7 @@
 [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
-![Version](https://img.shields.io/badge/version-4.3.1-green)
+![Version](https://img.shields.io/badge/version-4.4.0-green)
 
 [빠른 시작](#빠른-시작) ·
 [모드](#모드-apex--cruise--sip) ·
@@ -194,7 +194,9 @@ effi                  # 구독 / 플랜 로그인
 # … 사용량 한도 …
 effi local            # 무료 로컬 백엔드 (소형 모델용 MCP 차단)
 effi pick --task "대량 번역"
-effi run -t "번역" "…"
+effi run -t "번역" "…"                 # 생성 (stdout)
+effi edit path.py "타입 힌트 추가"      # 재작성 → path.py.effi-new + diff
+effi edit --apply-only path.py          # 검토 후 수락
 ```
 
 **선택 — 다중 계정 / API 로테이션** (키가 있거나 프로필을 나눌 때만):
@@ -235,7 +237,8 @@ effi                             # 임계 미만 계정 선택
 | `effi new <이름> [목표]` | **프로젝트 루트** 아래 작업 폴더 생성 |
 | `effi log <이름> <TAG> <메시지>` | `tasks/<이름>/log.md`에 append |
 | `effi review [-o 디렉터리]` | 클린 컨텍스트 리뷰 팩 (diff + brief) |
-| `effi pick` / `effi run` | 로컬 모델 선택 / 기계 작업 워커 |
+| `effi pick` / `effi run` | 로컬 모델 선택 / 기계 **생성** 워커 |
+| `effi edit <파일> "…"` | 로컬 **파일 재작성** → `.effi-new` 사이드카 + diff |
 | `effi accounts …` | 다중 계정 임계 로테이션 |
 | `effi catalog …` | 2주 주기 모델 카탈로그 상태 / 리서치 / bump |
 | `effi status` | 스냅샷: 모드, 프로젝트, Ollama, 계정 |
@@ -314,6 +317,7 @@ CI는 푸시/PR마다 동일 테스트를 실행합니다: [`.github/workflows/c
 ## 솔직한 한계
 
 - 로컬 모델은 어려운 멀티파일 작업에서 클라우드를 따라가지 못합니다.  
+- `effi-edit`는 큰 파일을 거부합니다(기본 8 k자) — 작은 모델이 조용히 잘리지 않게.  
 - 구독 사용자는 로컬로 **직접** 전환합니다 (`effi local`) — 약관 준수.  
 - 바쁜 16 GB 맥은 작은 로컬 모델이 한계입니다 — 천장은 도구가 아니라 메모리.  
 - Claude Agent Teams는 실험·고비용 — XL만.  

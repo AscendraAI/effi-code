@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# effi-edit — local-tier file rewrite with sidecar + unified diff
+#
+# Local cascade twin of effi-run (generate): mechanical bulk *edits*
+# stay free. Original is never touched unless --apply / --apply-only.
+#
+#   effi-edit <file> "add type hints"
+#   effi-edit -m qwen2.5-coder:7b path.py "rename foo→bar"
+#   effi-edit --apply path.py "…"          # generate then overwrite
+#   effi-edit --apply-only path.py         # apply existing .effi-new
+#   effi-edit --max-chars 12000 path.py "…"
+#   EFFI_LOCAL_MODEL=…  EFFI_EDIT_MAX_CHARS=8000
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+export PATH="$ROOT/bin:$PATH"
+
+MODEL="${EFFI_LOCAL_MODEL:-}"
+OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
+APPLY=0
+APPLY_ONLY=0
+MAX_CHARS="${EFFI_EDIT_MAX_CHARS:-}"
+FILE=""
+INSTRUCTION=""
+
+usage() {
+  cat <<'EOF' >&2
+usage: effi-edit [opts] <file> "instruction"
+       effi-edit --apply-only <file>
+
+  Local full-file rewrite → <file>.effi-new + unified diff on stdout.
+  Original is unchanged unless --apply / --apply-only.
+
+opts:
+  -m MODEL         local model (default: effi-pick / EFFI_LOCAL_MODEL)
+  --apply          after generate, write sidecar over original
+  --apply-only     apply existing <file>.effi-new (no model call)
+  --max-chars N    refuse files larger than N chars (default 8000)
+  -h, --help       this help
+
+safety:
+  Files over the char budget are refused (no quiet truncation).
+  Review the diff, then:  effi-edit --apply-only <file>
+EOF
+  exit 1
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -m) MODEL="$2"; shift 2 ;;
+    --apply) APPLY=1; shift ;;
+    --apply-only) APPLY_ONLY=1; shift ;;
+    --max-chars) MAX_CHARS="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    --) shift; break ;;
+    -*) echo "unknown: $1" >&2; usage ;;
+    *) break ;;
+  esac
+done
+
+if [ "$#" -lt 1 ]; then usage; fi
+FILE="$1"; shift
+
+if [ "$APPLY_ONLY" -eq 1 ]; then
+  [ -f "$FILE" ] || { echo "no file: $FILE" >&2; exit 1; }
+  FILE="$FILE" python3 - <<'PY'
+import os, sys
+from pathlib import Path
+from effi_core import apply_sidecar, sidecar_path, unified_diff
+
+path = Path(os.environ["FILE"])
+sc = sidecar_path(path)
+if not sc.is_file():
+    print(f"no sidecar: {sc}", file=sys.stderr)
+    print("run: effi-edit <file> \"instruction\" first", file=sys.stderr)
+    sys.exit(1)
+old = path.read_text(encoding="utf-8")
+new = sc.read_text(encoding="utf-8")
+diff = unified_diff(old, new, fromfile=str(path), tofile=str(sc))
+if diff:
+    print(diff, end="" if diff.endswith("\n") else "\n")
+info = apply_sidecar(path)
+print(f"[effi-edit] applied → {info['path']} ({info['chars']} chars)", file=sys.stderr)
+print(f"[effi-edit] sidecar kept: {info['sidecar']}", file=sys.stderr)
+PY
+  exit 0
+fi
+
+if [ "$#" -gt 0 ]; then
+  INSTRUCTION="$*"
+else
+  INSTRUCTION="$(cat)"
+fi
+[ -n "${INSTRUCTION:-}" ] || usage
+[ -f "$FILE" ] || { echo "no file: $FILE" >&2; exit 1; }
+
+if [ -z "$MODEL" ]; then
+  MODEL="$(effi-pick --task "file edit implement" 2>/dev/null || true)"
+  MODEL="${MODEL:-qwen2.5-coder:3b}"
+fi
+
+# Size guard (pure Python, no network)
+export EFFI_EDIT_FILE="$FILE" EFFI_EDIT_MAX="${MAX_CHARS:-}"
+if ! python3 - <<'PY'
+import os, sys
+from pathlib import Path
+from effi_core import check_edit_size
+
+path = Path(os.environ["EFFI_EDIT_FILE"])
+raw = path.read_text(encoding="utf-8")
+max_c = os.environ.get("EFFI_EDIT_MAX") or None
+max_c = int(max_c) if max_c else None
+chk = check_edit_size(raw, max_c)
+if not chk["ok"]:
+    print(f"[effi-edit] refused: {chk['reason']}", file=sys.stderr)
+    sys.exit(2)
+print(f"[effi-edit] size ok: {chk['chars']}/{chk['max_chars']} chars", file=sys.stderr)
+PY
+then
+  exit 2
+fi
+
+curl -sf --connect-timeout 1 --max-time 3 "$OLLAMA_URL/api/tags" >/dev/null 2>&1 || {
+  echo "Ollama off — run: ollama serve" >&2
+  exit 1
+}
+
+echo "[effi-edit] model=$MODEL file=$FILE" >&2
+
+export SAG_MODEL="$MODEL" SAG_URL="$OLLAMA_URL" SAG_FILE="$FILE" \
+  SAG_INSTR="$INSTRUCTION" SAG_APPLY="$APPLY"
+
+python3 - <<'PY'
+import os, sys
+from pathlib import Path
+from effi_core import (
+    apply_sidecar,
+    build_edit_messages,
+    ollama_chat,
+    sidecar_path,
+    strip_code_fences,
+    unified_diff,
+    write_sidecar,
+)
+
+path = Path(os.environ["SAG_FILE"])
+instruction = os.environ["SAG_INSTR"]
+model = os.environ["SAG_MODEL"]
+url = os.environ["SAG_URL"]
+do_apply = os.environ.get("SAG_APPLY") == "1"
+
+old = path.read_text(encoding="utf-8")
+messages = build_edit_messages(path, old, instruction)
+
+try:
+    raw = ollama_chat(model, messages, url=url)
+except Exception as e:
+    print(f"local edit failed: {e}", file=sys.stderr)
+    sys.exit(1)
+
+new = strip_code_fences(raw)
+if not new.strip():
+    print("local edit failed: empty model output", file=sys.stderr)
+    sys.exit(1)
+
+# Preserve trailing newline if original had one
+if old.endswith("\n") and not new.endswith("\n"):
+    new += "\n"
+
+sc = write_sidecar(path, new)
+diff = unified_diff(old, new, fromfile=str(path), tofile=str(sc))
+if diff:
+    sys.stdout.write(diff if diff.endswith("\n") else diff + "\n")
+else:
+    print(f"[effi-edit] no textual change (sidecar still written: {sc})", file=sys.stderr)
+
+print(f"[effi-edit] sidecar: {sc}", file=sys.stderr)
+
+if do_apply:
+    info = apply_sidecar(path)
+    print(f"[effi-edit] applied → {info['path']}", file=sys.stderr)
+else:
+    print(f"[effi-edit] review the diff, then:  effi-edit --apply-only {path}", file=sys.stderr)
+PY

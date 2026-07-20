@@ -1418,7 +1418,7 @@ def doctor() -> dict:
             {
                 "name": "ollama",
                 "ok": True,  # soft — cloud-only users are fine
-                "detail": f"off ({e.__class__.__name__}) — needed for effi local / effi-run",
+                "detail": f"off ({e.__class__.__name__}) — needed for effi local / run / edit",
             }
         )
 
@@ -1597,6 +1597,148 @@ def append_task_log(
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(line)
     return log_path
+
+
+# ── File-edit delegation (effi-edit) ────────────────────────────────
+# Local-tier full-file rewrite with non-destructive sidecar.
+# Safety: refuse files larger than DEFAULT_EDIT_MAX_CHARS so small models
+# never silently truncate large sources.
+
+DEFAULT_EDIT_MAX_CHARS = int(os.environ.get("EFFI_EDIT_MAX_CHARS", "8000"))
+
+
+def sidecar_path(path: "Path | str") -> Path:
+    """Return <file>.effi-new next to the original."""
+    p = Path(path)
+    return p.with_name(p.name + ".effi-new")
+
+
+def strip_code_fences(text: str) -> str:
+    """Remove leading/trailing markdown code fences from model output."""
+    s = (text or "").strip()
+    if not s:
+        return s
+    # Whole response is one fenced block
+    m = re.match(r"^```[\w.+-]*\s*\n([\s\S]*?)\n```\s*$", s)
+    if m:
+        return m.group(1)
+    lines = s.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines)
+    return s
+
+
+def check_edit_size(content: str, max_chars: Optional[int] = None) -> dict:
+    """Guard against quiet truncation on large files."""
+    max_c = DEFAULT_EDIT_MAX_CHARS if max_chars is None else int(max_chars)
+    n = len(content or "")
+    ok = n <= max_c
+    return {
+        "ok": ok,
+        "chars": n,
+        "max_chars": max_c,
+        "reason": (
+            None
+            if ok
+            else (
+                f"file too large for safe local rewrite ({n} > {max_c} chars); "
+                "split the task, raise EFFI_EDIT_MAX_CHARS / --max-chars, or use a cloud mid tier"
+            )
+        ),
+    }
+
+
+def build_edit_messages(path: "Path | str", content: str, instruction: str) -> list:
+    """System+user messages for a full-file rewrite."""
+    path_s = str(path)
+    system = (
+        "You are a careful local coding worker. Rewrite the entire file according to the instruction. "
+        "Output ONLY the full new file contents — no markdown fences, no commentary, no preamble."
+    )
+    user = (
+        f"## File path\n{path_s}\n\n"
+        f"## Current file contents\n"
+        f"{content}\n\n"
+        f"## Instruction\n{instruction}\n\n"
+        f"Return the complete revised file only."
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
+
+def unified_diff(
+    old: str,
+    new: str,
+    fromfile: str = "a",
+    tofile: str = "b",
+) -> str:
+    import difflib
+
+    old_lines = (old or "").splitlines(keepends=True)
+    new_lines = (new or "").splitlines(keepends=True)
+    if old_lines and not old_lines[-1].endswith("\n"):
+        old_lines[-1] += "\n"
+    if new_lines and not new_lines[-1].endswith("\n"):
+        new_lines[-1] += "\n"
+    return "".join(
+        difflib.unified_diff(old_lines, new_lines, fromfile=fromfile, tofile=tofile)
+    )
+
+
+def write_sidecar(path: "Path | str", new_content: str) -> Path:
+    sc = sidecar_path(path)
+    sc.write_text(new_content, encoding="utf-8")
+    return sc
+
+
+def apply_sidecar(path: "Path | str") -> dict:
+    """Overwrite original with existing <file>.effi-new."""
+    p = Path(path)
+    sc = sidecar_path(p)
+    if not sc.is_file():
+        raise FileNotFoundError(f"no sidecar: {sc}")
+    if not p.is_file():
+        raise FileNotFoundError(f"no original: {p}")
+    new = sc.read_text(encoding="utf-8")
+    p.write_text(new, encoding="utf-8")
+    return {"path": str(p.resolve()), "sidecar": str(sc.resolve()), "chars": len(new)}
+
+
+def ollama_chat(
+    model: str,
+    messages: list,
+    url: Optional[str] = None,
+    temperature: float = 0.2,
+    timeout: int = 600,
+) -> str:
+    """Call Ollama /api/chat; return assistant content text."""
+    if url is None:
+        try:
+            url = (load_config().get("local") or {}).get("ollama_url")
+        except Exception:
+            url = None
+    base = (url or "http://localhost:11434").rstrip("/")
+    body = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "keep_alive": "30m",
+        "options": {"temperature": temperature},
+    }
+    req = urllib.request.Request(
+        base + "/api/chat",
+        data=json.dumps(body).encode(),
+        headers={"content-type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        d = json.load(r)
+    msg = d.get("message") or {}
+    return (msg.get("content") or d.get("response") or "").rstrip()
 
 
 def print_json(data: Any) -> None:

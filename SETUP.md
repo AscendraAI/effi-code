@@ -59,7 +59,10 @@ effi route "할 일 설명"     # 모델 결정
 effi new my-feature "목표"
 effi                        # Claude 세션
 effi catalog status         # 2주 갱신 여부
-python3 -m unittest tests/test_route.py   # 툴킷 개발 시
+# 로컬 파일편집 (Ollama 필요)
+effi edit path.py "타입 힌트 추가"   # → path.py.effi-new + diff
+effi edit --apply-only path.py       # 검토 후 적용
+python3 -m unittest discover -s tests -v   # 툴킷 개발 시
 ```
 
 ## 검증 체크
@@ -68,5 +71,6 @@ python3 -m unittest tests/test_route.py   # 툴킷 개발 시
 - [ ] `effi route "architecture redesign"` → opus
 - [ ] `effi route "translate strings"` → local
 - [ ] `effi new` 가 **앱 루트** `tasks/` 에 생성 (툴킷 clone 안)
+- [ ] `effi edit --help` / size-guard (큰 파일 거부)
 - [ ] `effi accounts threshold 80` 동작
 - [ ] `effi catalog status` stale=false
