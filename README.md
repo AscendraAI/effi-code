@@ -1,111 +1,125 @@
 # effi-code
 
-**A cost-optimized, multi-model coding-agent orchestration.**
-Run Claude as the lead, spend the least, and keep working on a free local model when your paid quota runs out.
+**v4 (`VERSION` 4.0.0) — Multi-provider, cost-minimal coding orchestration.**  
+Route each task to the best of **Claude · Codex (OpenAI) · Gemini · Grok · Local**, rotate Claude accounts at a usage threshold you set, and keep a biweekly model catalog honest.
+
+Project name: **effi-code** (CLI: `effi`).
 
 **English** | [한국어](README_ko.md)
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Apple%20Silicon-lightgrey) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) ![Orchestration](https://img.shields.io/badge/orchestration-v4-green) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
 
-> Not a framework. No server to install, nothing running in the background.
-> Just a few files and a **way of working** — every decision, approval, and record lives on disk.
-
-**Top model where it counts. Cheap models everywhere else. Local when the meter runs out.** — that's the whole philosophy.
+> Not a heavyweight framework. Files + small CLIs + a way of working.  
+> **Right model per task. Single writer. Clean-context verify. Cache-safe main thread.**
 
 ---
 
-## What is effi-code?
+## What v4 adds
 
-effi-code turns a single coding session (Claude Code) into a small, cost-aware **team**: a strong **Claude** lead, cheaper **Codex / Gemini** helpers, and a free **local model** running on your own machine. An orchestrator routes each task to the cheapest tier that can do it, and escalates only when it must.
+| # | Capability |
+|---|---|
+| 1 | **Task → optimal model** across Claude / OpenAI-Codex / Gemini / Grok / Ollama (`effi route`) |
+| 2 | **Multi Claude accounts** with configurable usage threshold (`effi accounts threshold 80`) |
+| 3 | **Task + RAM local pick** (not one fixed model) + **14-day catalog review** (`effi catalog`) |
+| 4 | **Full delivery loop** — plan → architecture → design → implement → test → review → deploy |
 
-It solves two everyday pains:
+## Quick start
 
-- **Cost** — most people send every task to the priciest model. In practice ~85% of coding tokens don't need the top tier. Send the easy work down; keep Claude for the hard judgment.
-- **Quota** — paid plans have usage limits. When you hit the wall mid-flow, a local model takes over so you don't stop and wait.
-
-## Core idea: cheapest tier first
-
-```
-local (free)  →  Codex  →  Gemini  →  Claude (top)
-        try cheap first, escalate only when the result isn't good enough
-```
-
-| Tier | Role | Cost |
-|---|---|---|
-| **Claude** | hard design · debugging · architecture · orchestration | high → used sparingly |
-| **Codex / Gemini** | implementation help · long documents · third-party review | low |
-| **Local** (Ollama: Qwen / Devstral) | narrow mechanical coding · quota backstop | free (slower) |
-
-**Memory is the filesystem.** There is no runtime state — every task, approval, and verdict is a file on disk. A dead session resumes by reading one folder.
-
-## Get Started
-
-### Requirements
-- macOS (Apple Silicon)
-- [Claude Code](https://claude.com/claude-code) — the orchestration harness
-- [Ollama](https://ollama.com) — runs the local model (installed for you by `setup.sh`)
-
-### Installation
 ```bash
 git clone https://github.com/AscendraAI/effi-code && cd effi-code
+./setup.sh
+export PATH="$PWD/bin:$PATH"
 
-./setup.sh                                    # installs Ollama, picks & pulls a local model that fits your Mac
-ln -s "$PWD/bin/effi"      /opt/homebrew/bin/effi
-ln -s "$PWD/bin/effi-run"  /opt/homebrew/bin/effi-run
-ln -s "$PWD/bin/effi-pick" /opt/homebrew/bin/effi-pick
+# Session rules in any project
+ln -s /path/to/effi-code/CLAUDE.md ./CLAUDE.md
+
+# Multi-account (optional)
+effi accounts init
+effi accounts threshold 80
+effi accounts meter work-primary 10
+
+effi                 # Claude cloud (auto account select)
+effi route "add rate-limit middleware + tests"
+effi route "landing page UI mockup"
+effi route "translate 40 UI strings"
 ```
 
-### Configuration
-- Load `ORCHESTRATION.md` as your session's rules (e.g. as the project's `CLAUDE.md`). The orchestrator reads it on every task.
-- The local model is chosen **automatically** by available memory — no config needed. Pin one with `EFFI_LOCAL_MODEL=devstral effi local`.
+## Routing examples
 
-## Usage
+```text
+$ effi route "분산 트랜잭션 아키텍처 재설계"
+primary: claude/claude-opus-4-8  cost≈high
+
+$ effi route "일반 기능 구현과 단위 테스트"
+primary: claude/claude-sonnet-5  cost≈mid
+
+$ effi route "UI 목업 디자인"
+primary: gemini/gemini-3.5-flash
+
+$ effi route "40개 문자열 한국어 번역"
+primary: local/<ram-picked-model>  cost≈free
+```
+
+Matrix: [`catalog/task-routing.json`](catalog/task-routing.json) · Models: [`catalog/models.json`](catalog/models.json)
+
+## Core loop
+
+```
+TRIAGE → PLAN → DO → VERIFY → SHIP
+```
+
+- **TRIAGE:** `effi route` → domain + model + review level  
+- **DO:** single writer; cross-provider only on **isolated** subtasks  
+- **VERIFY:** clean-context adversarial review (`effi review`)  
+- **Main thread stays on Claude** so prompt cache is not shattered (~10× on misses)
+
+## Accounts
 
 ```bash
-effi            # normal — subscription Claude (smartest)
-effi local      # quota exhausted → free local model (auto-sized to your free RAM)
-effi status     # which local model fits right now
+effi accounts init
+effi accounts threshold 75          # your choice
+effi accounts meter work-primary 72
+effi accounts list
+# effi (cloud) auto-selects an account under the threshold
 ```
 
-Delegate a boring, high-volume job straight to the local model:
+API keys via env vars (see `config/accounts.example.json`). OAuth profiles via isolated `config_dir`.  
+No subscription OAuth proxying (Anthropic ToS).
+
+## Local models
 
 ```bash
-effi-run "Translate these 5 UI strings to natural Korean: Save, Cancel, Delete, Loading, Done"
+effi pick --task "docstring bulk"
+effi run -t "번역" "…"
+effi local          # full Claude Code on Ollama when quota is gone
 ```
 
-And in a normal Claude session, the orchestrator will **offer** to delegate tedious bulk work for you:
+## Catalog (every ~2 weeks)
 
-> "This is a mechanical bulk task — I can run it on the free local model to save quota. Go ahead?"
-
-## Why it's built this way
-
-Every choice is grounded in 2026 research and real measurement. In short:
-
-1. **Claude leads, but don't over-spawn agents.** A strong lead + cheap workers beats a lone strong agent (Anthropic measured +90%) — but that was *research* work. For *coding*, multi-agent burns ~15× the tokens and can get *worse* from coordination overhead. So: one strong Claude thread; subagents only for genuinely parallel work.
-2. **Cut cost by routing, not by weakening.** ~85% of tokens don't need the top model. Prompt caching saves up to ~90% — but fragmenting one conversation across providers *breaks* the cache and costs ~10× more, so the main thread stays in one place.
-3. **Local is a backstop, not a replacement.** It covers ~80% of routine work, slower and less sharp. Auto-proxying a subscription would violate Anthropic's ToS, so switching is an honest toggle.
-4. **Tedious bulk work is offered to local — with your consent.** The orchestrator asks first; it never silently downgrades.
-5. **The local model is auto-sized to free memory** so your computer doesn't bog down.
-
-Full reasoning with citations: [`docs/why.md`](docs/why.md).
-
-## Honest limits
-
-- Local can't match the cloud on complex, multi-file work — it's a backstop.
-- Subscription users switch to local **manually** (`effi local`) — that's the ToS-clean path.
-- On a busy 16GB Mac, only small local models stay smooth. Memory is the ceiling, not the tool.
-- Router/local tools change monthly — check each project's latest docs before configuring.
+```bash
+effi catalog research   # official docs checklist
+# edit catalog/models.json + task-routing.json
+effi catalog bump
+```
 
 ## Docs
 
-| File | What |
+| File | |
 |---|---|
-| [`ORCHESTRATION.md`](ORCHESTRATION.md) | operating rules the orchestrator follows |
-| [`ROUTING.md`](ROUTING.md) | cost discipline + the caching trap |
-| [`FALLBACK.md`](FALLBACK.md) | quota exhaustion → local |
-| [`LOCAL-MODELS.md`](LOCAL-MODELS.md) | models per Mac + Ollama setup |
-| [`docs/why.md`](docs/why.md) | design rationale (research + measurements) |
+| [`ORCHESTRATION.md`](ORCHESTRATION.md) | v4 operating rules |
+| [`ROUTING.md`](ROUTING.md) | cost + cache discipline |
+| [`docs/domains.md`](docs/domains.md) | plan→deploy pipeline |
+| [`docs/why.md`](docs/why.md) | citations (2026-07) |
+| [`CLAUDE.md`](CLAUDE.md) | drop-in session rules |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.0.0) |
+
+## Philosophy (evidence-backed)
+
+1. Strong lead + cheap workers beats all-Opus on cost; multi-agent coding is often a **15× token trap** (Anthropic).  
+2. Writes single-threaded; review in a **fresh context** (Cognition).  
+3. Save money by **routing + cache continuity**, not by silently weakening the lead.  
+4. Local is backstop + bulk — not the architect.
 
 ## License
 
-Apache-2.0 — see [`LICENSE`](LICENSE) / [`NOTICE`](NOTICE). © 2026 AscendraAI.
+Apache-2.0 — [`LICENSE`](LICENSE) / [`NOTICE`](NOTICE). © 2026 AscendraAI.

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "switch_threshold_percent": 80,
+  "rotation_policy": "next_available",
+  "notes": [
+    "Store API keys here OR set env_var names that resolve at runtime.",
+    "Do NOT commit real keys. File mode should be 600.",
+    "Subscription OAuth: use isolated config_dir per account (Claude Code profile isolation).",
+    "usage_percent is user-maintained (or set via `effi accounts meter`). Auto APIs vary by plan."
+  ],
+  "accounts": [
+    {
+      "id": "work-primary",
+      "label": "Work primary",
+      "provider": "claude",
+      "type": "api_key",
+      "api_key_env": "ANTHROPIC_API_KEY_WORK",
+      "usage_percent": 0,
+      "usage_limit_note": "monthly",
+      "priority": 1,
+      "enabled": true
+    },
+    {
+      "id": "work-secondary",
+      "label": "Work secondary",
+      "provider": "claude",
+      "type": "api_key",
+      "api_key_env": "ANTHROPIC_API_KEY_WORK2",
+      "usage_percent": 0,
+      "priority": 2,
+      "enabled": true
+    },
+    {
+      "id": "personal-sub",
+      "label": "Personal Max (OAuth profile)",
+      "provider": "claude",
+      "type": "oauth_profile",
+      "config_dir": "~/.config/effi/profiles/personal",
+      "usage_percent": 0,
+      "priority": 3,
+      "enabled": false,
+      "notes": "Copy/isolate Claude credentials into config_dir; effi sets CLAUDE_CONFIG_DIR when activating."
+    }
+  ]
+}

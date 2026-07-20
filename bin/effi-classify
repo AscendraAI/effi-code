@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# effi-classify — domain + grade + model (compat wrapper → effi-route)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$ROOT/bin/effi-route" --compact "$@"

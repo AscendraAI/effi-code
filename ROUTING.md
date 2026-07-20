@@ -1,45 +1,73 @@
-# 라우팅 & 비용 규율
+# 라우팅 & 비용 규율 v4
 
-핵심: **성능은 강한 모델에서, 절감은 "성능이 필요 없는 곳"에서.**
-근거 수치는 `docs/why.md`.
+**성능은 필요한 곳에, 절감은 필요 없는 곳에서. 태스크마다 최적 모델.**
 
-## 티어
+실행기: `effi route "…"`. 매트릭스: `catalog/task-routing.json`. 모델: `catalog/models.json`.
 
-| 티어 | 용도 | 비용 |
+## 프로바이더 맵 (2026-07 카탈로그)
+
+| Provider | Top | Mid (기본 코딩) | Cheap / Bulk |
+|---|---|---|---|
+| **Claude** | Opus 4.8 / Fable 5 | Sonnet 5 | Haiku 4.5 |
+| **OpenAI (Codex)** | GPT-5.6 Sol | GPT-5.6 Terra | GPT-5.6 Luna |
+| **Gemini** | 3.1 Pro | 3.5 Flash | 3.1 Flash-Lite |
+| **Grok** | 4.5 | 4.3 / Build 0.1 | — |
+| **Local** | qwen3-coder:30b / devstral | ornith:9b / gemma4:12b | qwen2.5-coder 7b→1.5b |
+
+> 가격·ID는 카탈로그 기준. 2주마다 `effi catalog research` 후 갱신.
+
+## 도메인 → 1순위 (요약)
+
+| Domain | Primary | 토큰 전략 |
 |---|---|---|
-| **최상위 (Opus급 클로드)** | 어려운 설계·아키텍처·까다로운 디버깅·미묘한 판단, 오케스트레이션 | 높음 → 아껴 씀 |
-| **중급 (Sonnet급 / 코덱스)** | 일반 구현·리팩터링·테스트·리뷰 | 낮음 (기본값) |
-| **로컬 (Qwen/Devstral)** | 스코프 좁은 코드·단일파일·버그픽스·쿼터 폴백 | 공짜 (느림) |
+| orchestrate / plan / architecture / security | Claude Opus | 판단에만 top |
+| implement / refactor / test / deploy | Claude Sonnet | 메인 스레드 캐시 |
+| design / multimodal mock | Gemini Flash / image | 비전 강점 |
+| research (+ realtime) | Gemini Pro or Grok+search | 병렬 읽기 OK |
+| review (clean ctx) | Sonnet; 보안은 Opus | 생성 컨텍스트 분리 |
+| bulk / translate / docstring | **Local auto** | 공짜; 검증 필수 |
+| implement_hard / debug hard | Opus or GPT Sol or Grok 4.5 | 실패 시만 |
 
-## 캐스케이드 (싸게 시작, 필요할 때만 승격)
+## 캐스케이드
 
-1. 작업을 받으면 **중급/로컬로 먼저 시도**.
-2. 결과가 **검증(테스트·리뷰)을 통과하면 채택.**
-3. 실패가 반복되거나 애초에 "어려운 판단"이면 **최상위로 승격.**
+```
+start_tier (TRIAGE)
+  → verify pass → adopt
+  → fail ≤2 times same tier
+  → escalate one step (local→cheap→mid→top)
+  → top fail → stop + report user
+```
 
-> 실측: 클로드코드 토큰 **85%는 최상위 불필요**. 보수적 하이브리드 라우팅으로 **~62% 절감**. RouteLLM은 강모델에 14~26%만 보내 품질 95% 유지.
+## 캐시 규율 (가장 비싼 실수 방지)
 
-## ⚠️ 캐싱 함정 (가장 비싼 실수)
-
-프롬프트 캐싱은 캐시 읽기 ~90% 할인이지만:
-- **대화를 여러 프로바이더로 쪼개면 클로드 캐시 연속성이 깨져 10배**(미스 $5/M vs 히트 $0.50/M).
-- 캐시 킬러: **가변 시스템 프롬프트 → 히트 0%**, 슬라이딩 윈도우 → 가득 차면 0%.
-- 80% 히트율에서 실제 총액 절감은 ~32% (헤드라인 90% 아님).
-
-**규율:**
-- **메인 클로드 스레드는 한 프로바이더로 캐시 연속 유지.** 라우팅은 **컨텍스트가 어차피 격리된 서브태스크**(서브에이전트·독립 작업)에만 적용.
-- 시스템 프롬프트/규칙 프리픽스를 **고정**(매번 바꾸지 말 것).
-- 긴 반복 컨텍스트는 캐시를 켜고, 도구 직렬화를 결정적으로 유지.
-
-## 라우팅 vs 캐싱 — 언제 뭘
-
-| 상황 | 선택 |
+| 규칙 | 이유 |
 |---|---|
-| 메인 오케스트라 스레드 | **캐싱 우선** (프로바이더 고정, 캐시 연속) |
-| 격리된 서브태스크(리뷰·독립 모듈·배치) | **라우팅으로 싼 모델** |
-| 유료 쿼터 소진 | **로컬 폴백** (`FALLBACK.md`) |
+| 메인 = Claude 고정 (기본) | 캐시 연속; 미스 시 입력 ~10× |
+| 시스템/규칙 프리픽스 불변 | 가변 프롬프트 = 히트 0% |
+| 도구 직렬화 순서 고정 | 비결정 직렬화 = 캐시 붕괴 |
+| 라우팅은 격리 서브만 | 서브는 어차피 새 컨텍스트 |
+
+80% 캐시 히트여도 총액 절감은 ~32% 수준(출력 비중) — **불필요한 top 호출 제거**가 더 큼(~62% 보수 하이브리드).
+
+## 로컬
+
+```bash
+effi pick --task "번역 40개"     # RAM + 태스크 역할
+effi run -t "번역" "…"
+```
+
+고정 `EFFI_LOCAL_MODEL`은 오버라이드일 뿐 기본값이 아님.
+
+## 계정 임계값
+
+```bash
+effi accounts threshold 75   # 75% 이상이면 다음 계정
+effi accounts meter <id> 75
+```
 
 ## 금지
-- 성능이 필요 없는 일을 최상위 모델에 시키기.
-- 캐시 연속이 중요한 메인 스레드를 프로바이더 간에 쪼개기.
-- 같은 입력에 같은 티어 중복 호출.
+
+- 쉬운 일을 Opus/Sol/Fable에 시키기
+- 메인 스레드 프로바이더 중도 교체
+- 검증 없이 local/cheap 머지
+- 카탈로그 14일+ 방치 (`effi catalog status` stale)

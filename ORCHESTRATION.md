@@ -1,55 +1,137 @@
-# 운영 규칙 (Orchestration)
+# 운영 규칙 (Orchestration) v4
 
-> 코딩 세션(Claude Code 등)에 규칙으로 물리세요. 매 작업 시작 시 읽습니다.
-> 설계 근거: `docs/why.md`
+> 세션 규칙으로 물리세요 (`CLAUDE.md`). 매 작업 시작 시 읽습니다.  
+> 라우팅 매트릭스: `catalog/task-routing.json` · 모델 카탈로그: `catalog/models.json`  
+> 근거: `docs/why.md` · 계정: `effi accounts` · 비용: `ROUTING.md`
 
-## 원칙: 강한 단일 스레드 + 절제된 서브
+## 원칙 (2026 증거)
 
-2026년 증거는 명확합니다 — **코딩에선 과한 멀티에이전트가 손해**입니다(토큰 15배, 동일 예산이면 단일이 매칭/능가, 조정세로 성능 저하 가능). 그래서:
+1. **강한 단일 작성 스레드** — 쓰기는 한 에이전트(Cognition). 병렬 작성 스웜 금지.
+2. **서브 = 지능 주입** — 리서치·리뷰·독립 읽기만 병렬. 멀티에이전트 ~15× 토큰(Anthropic).
+3. **검증 = 클린 컨텍스트** — 생성 대화 없이 diff만 리뷰(Cognition: PR당 ~2버그, 58% 심각).
+4. **비용 = 태스크별 최적 모델** — Claude/Codex/Gemini/Grok/Local 중 **능력×단가** 최선. `effi route`.
+5. **메인 스레드 캐시 고정** — 보통 Claude 유지. 프로바이더 파편화 = 캐시 미스 ~10×.
+6. **로컬 = 태스크+RAM 동적 추천** — 고정 모델 금지. `effi pick --task "…"`.
+7. **계정 로테이션** — Claude 사용량 ≥ 사용자 임계값(기본 80%)이면 다음 계정. `effi accounts`.
+8. **파일 = 메모리·버스** — `tasks/<job>/`, 서브 원문은 `workers/`, 부모엔 경로+요약.
 
-- **메인 = 강한 클로드 스레드 하나.** 대부분의 코딩은 여기서, 컨텍스트를 연속 유지한다(캐시 절약).
-- **서브에이전트는 "진짜 병렬/격리 가능한 일"에만** — 코드 리뷰, 독립 모듈 병렬 구현, 리서치. 서브는 **요약만** 부모에 반환(컨텍스트 격리).
-- **쓰기는 싱글스레드로.** 여러 에이전트가 동시에 같은 코드를 쓰지 않는다(충돌·컨텍스트 파편화).
+---
 
-## 비용은 라우팅에서 (성능 아닌 곳에서 아낀다)
+## 5단계 루프
 
-- 기본 작업은 **싼 모델**(중급 클라우드/코덱스/로컬)로, **어려운 판단만 최상위(Opus급)로 에스컬레이션**. → `ROUTING.md`
-- **캐스케이드**: 싸게 시도 → 검증(테스트·리뷰) 실패 시에만 위로.
-- ⚠️ 메인 스레드의 **프롬프트 캐시를 깨지 말 것**(프로바이더 파편화 = 10배). → `ROUTING.md`
-
-## 파일이 곧 메모리
-
-- 작업 = 폴더 하나 `tasks/<작업>/` (`task.md`·`log.md`·`workers/<역할>/`).
-- 서브에이전트 결과 원문은 `result.md`에 보존. 진행·결정·검증은 `log.md`에 append(수정·삭제 금지).
-
-## 승인 게이트 (위험도 기준)
-
-- **그냥 진행**: 읽기·검색·작업폴더 내 편집·테스트·린트·`git add/commit`.
-- **멈추고 먼저 묻기**: 범위 밖 수정·삭제, 되돌릴 수 없는 것(강제푸시·배포·게시·과금), 대상 밖 쓰기·시크릿·운영, 범위/비용 2배↑.
-
-## 검증이 병목 (필수 게이트)
-
-2026년 병목은 생성이 아니라 **검증**입니다. 그러니:
-1. **만든 주체가 자기 걸 검토하지 않는다** — 다른 모델/새 스레드가 "일부러 부숴봐"로 적대적 검토.
-2. 지적은 **맹신도 맹기각도 금지** — 지적마다 직접 재현(테스트·grep)해 판정.
-3. 중요한 변경은 머지 직전 **누적 diff 통합 검토 1회.**
-(리뷰 에이전트는 PR당 ~2버그, 58% 심각 적발 — 값어치 있음.)
-
-## 쿼터 소진 시
-
-유료 플랜이 바닥나면 **로컬 모델이 이어받는다**(런처 토글 `effi local`). 로컬은 일상 작업 ~80%를 처리 — 최난도는 유료 복구까지 대기. → `FALLBACK.md`
-
-## 로컬 위임 (지루한 대량 작업 — 능동 제안)
-
-쿼터가 남아 있어도, **판단은 적고 양은 많은 작업**은 로컬(공짜)에 넘겨 쿼터를 아낀다. 단 **몰래 넘기지 말고 사용자에게 먼저 제안·확인**한다.
-
-- **트리거 예**: 대량 리네임, 보일러플레이트 생성, 번역, docstring·주석 달기, 반복 포맷 변환, 테스트 스캐폴딩 등.
-- **제안 문구 예**: "이건 기계적 대량 작업이라 로컬(무료)로 돌려 쿼터를 아낄 수 있어요. 로컬로 진행할까요?"
-- **확인(예) →** `effi-run "<작업>"`으로 로컬 워커에 위임(세션은 그대로 클로드 유지) → 결과를 **검증**(약한 모델이므로 맹신 금지) 후 적용.
-- **금지**: 확인 없는 자동 위임. 어려운 판단·아키텍처·미묘한 로직은 위임하지 않는다.
-- 생성형 작업은 `effi-run`으로 바로. 파일 편집형 대량작업은 별도 로컬 세션(`effi local`) 고려.
-
-## 기록 형식 (`log.md`)
 ```
-[YYYY-MM-DD HH:MM] [DECISION | WORKER_CALL | VERIFICATION | ERROR | APPROVAL | FALLBACK | COMPLETE] 내용
+TRIAGE → PLAN → DO → VERIFY → SHIP
+              ↑________|  (검증 실패 시 승격, 티어당 ≤2회)
+```
+
+### 1) TRIAGE
+
+```bash
+effi route "작업 설명"          # domain + model + review
+# 또는
+effi route --compact "…"
+```
+
+| 등급 | 신호 | 기본 |
+|---|---|---|
+| **S** | 기계적·1파일·명백 | cheap/local |
+| **M** | 일반 기능·테스트 | mid (Sonnet/Terra/Flash) |
+| **L** | 설계·보안·고난도 디버그 | top (Opus/Sol/Pro) |
+| **XL** | 독립 모듈 다수·경쟁 가설 | top 리드 + 읽기 병렬 3–5 |
+
+`log.md`에 한 줄:
+```
+[TRIAGE] domain=implement grade=M model=claude/claude-sonnet-5 review=clean_context
+```
+
+### 2) PLAN — 도메인별 산출물
+
+| 도메인 | 산출 | 선호 모델 (카탈로그) |
+|---|---|---|
+| plan | PRD/범위/우선순위 → `task.md` | Claude Opus |
+| architecture | 트레이드오프·스키마 | Claude Opus / GPT Sol |
+| design | 목업·디자인 토큰·컴포넌트 스펙 | Gemini Flash / image |
+| research | 조사 메모 + 출처 | Gemini Pro / Grok+search |
+| implement* | 코드 | Sonnet / Terra / Grok Build |
+| test | 테스트 | Sonnet / Luna(대량) |
+| review | 적대 리뷰 리포트 | **다른 컨텍스트** Sonnet/Opus |
+| security | 위협 모델·패치 | Opus only |
+| deploy | 파이프라인·런북·체크리스트 | Sonnet; prod는 승인 게이트 |
+| bulk | 번역·docstring·스캐폴드 | **Local** (`effi-run`) |
+
+L/XL만 긴 계획. 계획은 파일에 고정(컨텍스트 잘림 대비).
+
+### 3) DO — single writer
+
+- **메인이 파일 쓰기.** 서브는 읽기·초안·리뷰.
+- 예외: 파일 집합이 **완전 분리**된 독립 모듈 + 사용자 승인 시만 병렬 구현.
+- 기계 대량 → 확인 후 `effi run -t "번역" "…"`.
+- 위임 brief: `templates/brief.md` (목표·경로·하지 말 것·노력 예산).
+- Claude 계정: 세션 시작 시 `effi`가 threshold 기준으로 자동 선택.
+
+### 4) VERIFY
+
+| 등급 | 검증 |
+|---|---|
+| S | 스모크 1회 |
+| M+ | 테스트 + **클린 컨텍스트 적대 리뷰** (`effi review -o …`) |
+| L+ | 위 + 통합 diff 리뷰 |
+
+실패 → 같은 티어 ≤2회 → `effi route` 상위 모델로 승격. 무한 루프 금지.
+
+### 5) SHIP
+
+- `task.md` → done · `log.md` `[COMPLETE]`
+- 배포 도메인은 **prod 승인 게이트** 필수.
+
+---
+
+## 멀티 프로바이더 사용법 (토큰 절감)
+
+```
+메인 세션 (Claude, 캐시 유지)
+  ├─ 격리 서브: Codex/Terra 로 구현 초안 (결과 파일만)
+  ├─ 격리 서브: Gemini 로 디자인/롱컨텍스트 요약
+  ├─ 격리 서브: Grok 로 실시간 리서치
+  ├─ 로컬: effi-run 기계 작업
+  └─ 리뷰: 새 스레드 + 다른 모델 가능 (생성 컨텍스트 공유 금지)
+```
+
+**금지:** 메인 대화를 도중 OpenAI↔Claude로 갈아끼워 캐시 파괴.  
+**허용:** 세션 경계·서브·`effi-run`에서 프로바이더 변경.
+
+---
+
+## 계정 로테이션
+
+```bash
+effi accounts init
+effi accounts threshold 80          # 사용자 정의 %
+effi accounts meter work-primary 75
+effi accounts select                # usage < threshold 인 계정
+```
+
+`effi`(cloud) 시작 시 자동 select. 구독 OAuth 프록시 금지 — API 키 또는 프로필 디렉터리 격리.
+
+---
+
+## 카탈로그 갱신 (2주)
+
+```bash
+effi catalog research   # 공식 문서 체크리스트
+# catalog/models.json, task-routing.json 편집
+effi catalog bump       # updated_at + next_review_due(+14d)
+```
+
+---
+
+## 승인 게이트
+
+- **진행:** 읽기, `tasks/` 편집, 테스트, 린트, (관례 허용 시) commit.
+- **묻기:** 범위 밖 삭제, 강제푸시, **prod 배포**, 시크릿, 비용/범위 2×, Teams 스폰, 로컬 위임, 계정 강제 전환.
+
+## 기록
+
+```
+[YYYY-MM-DD HH:MM] [TRIAGE|DECISION|WORKER_CALL|VERIFICATION|ESCALATE|ACCOUNT|FALLBACK|COMPLETE] …
 ```

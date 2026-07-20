@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# effi-review — 클린 컨텍스트 적대 리뷰용 재료를 준비한다.
+# 생성 세션과 분리된 리뷰 스레드에 붙여넣기 좋게 diff + 브리프를 묶는다.
+#
+#   effi-review                     # git diff vs HEAD → stdout (요약 메타만 + 경로 권장)
+#   effi-review --staged
+#   effi-review main...HEAD
+#   effi-review -o tasks/foo/workers/review
+#
+# 출력: -o 디렉터리에 brief.md + diff.patch (권장). stdout 전체 덤프는 큰 diff에서 비추천.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT=""
+RANGE=""
+STAGED=0
+MAX_BYTES=200000
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) OUT="$2"; shift 2 ;;
+    --staged) STAGED=1; shift ;;
+    -h|--help)
+      echo "사용법: effi-review [--staged] [-o dir] [git-rev-range]" >&2
+      exit 0 ;;
+    *) RANGE="$1"; shift ;;
+  esac
+done
+
+export GIT_PAGER=cat PAGER=cat
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "git 저장소가 아닙니다." >&2
+  exit 1
+fi
+
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
+if [ -n "$RANGE" ]; then
+  git --no-pager diff --no-ext-diff "$RANGE" >"$TMP" 2>/dev/null || true
+elif [ "$STAGED" -eq 1 ]; then
+  git --no-pager diff --no-ext-diff --cached >"$TMP" 2>/dev/null || true
+else
+  git --no-pager diff --no-ext-diff HEAD >"$TMP" 2>/dev/null || true
+fi
+
+if [ ! -s "$TMP" ]; then
+  echo "diff 비어 있음 — 커밋/스테이징 상태를 확인하세요." >&2
+  exit 1
+fi
+
+BYTES=$(wc -c <"$TMP" | tr -d ' ')
+if [ "$BYTES" -gt "$MAX_BYTES" ]; then
+  echo "⚠️ diff ${BYTES}B → 앞 ${MAX_BYTES}B만 사용. 범위를 좁히세요 (예: --staged)." >&2
+  head -c "$MAX_BYTES" "$TMP" >"${TMP}.cut"
+  printf '\n... [truncated by effi-review] ...\n' >>"${TMP}.cut"
+  mv "${TMP}.cut" "$TMP"
+  BYTES=$(wc -c <"$TMP" | tr -d ' ')
+fi
+
+LINES=$(wc -l <"$TMP" | tr -d ' ')
+BRIEF="$ROOT/templates/review.md"
+
+if [ -n "$OUT" ]; then
+  mkdir -p "$OUT"
+  {
+    cat "$BRIEF"
+    echo
+    echo "## 첨부 Diff"
+    echo "경로: \`${OUT}/diff.patch\` (${LINES} lines, ${BYTES}B)"
+  } >"$OUT/brief.md"
+  cp "$TMP" "$OUT/diff.patch"
+  echo "✓ $OUT/brief.md + diff.patch (${LINES} lines, ${BYTES}B)"
+  echo "다음: 새 스레드/서브에 brief.md 만 주고 적대 리뷰. 생성 대화 공유 금지."
+else
+  # stdout: 브리프 + diff (작은 변경용). 큰 변경은 -o 권장.
+  cat "$BRIEF"
+  echo
+  echo "----- BEGIN DIFF (${LINES} lines, ${BYTES}B) -----"
+  cat "$TMP"
+  echo "----- END DIFF -----"
+fi

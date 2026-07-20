@@ -39,15 +39,16 @@ else
   done
 fi
 
-# 4) RAM 감지 → 모델 선택
+# 4) RAM 감지 → 모델 선택 (2026-07 사다리: qwen3-coder > devstral > qwen2.5)
 RAM_BYTES=$(sysctl -n hw.memsize)
 RAM_GB=$(( RAM_BYTES / 1024 / 1024 / 1024 ))
 say "감지된 통합 메모리: ${RAM_GB}GB"
-if   (( RAM_GB >= 30 )); then MODEL="devstral";            NOTE="24GB+ : 에이전트 코딩 특화";
-elif (( RAM_GB >= 22 )); then MODEL="devstral";            NOTE="24GB : 에이전트 코딩 특화";
-else                          MODEL="qwen2.5-coder:7b";    NOTE="16GB : 빠른 폴백(실측 ~26 tok/s, 14B의 2배)";
+if   (( RAM_GB >= 36 )); then MODEL="qwen3-coder:30b";    NOTE="32GB+ : Qwen3-Coder MoE 30B, 256K";
+elif (( RAM_GB >= 22 )); then MODEL="devstral";           NOTE="24GB : Devstral agentic coding";
+else                          MODEL="qwen2.5-coder:7b";   NOTE="16GB : 빠른 폴백(실측 ~26 tok/s)";
 fi
 echo "권장 모델: ${MODEL}  (${NOTE})"
+echo "(런타임에는 effi-pick이 가용 메모리로 더 작은 모델을 고를 수 있습니다)"
 read -r -p "이 모델을 지금 받을까요? (다운로드 수 GB) [y/N] " ans
 if [[ "${ans:-N}" =~ ^[Yy]$ ]]; then
   say "모델 다운로드: ollama pull ${MODEL}"
@@ -56,26 +57,30 @@ else
   echo "건너뜀. 나중에: ollama pull ${MODEL}"
 fi
 
-# 5) 라우터 안내 (설치는 선택 — 스키마가 자주 바뀌므로 자동화하지 않고 안내)
-say "다음: 라우팅 + 폴백 연결"
-cat <<'EOF'
-  로컬 폴백을 실제로 연결하려면 라우터가 필요합니다 (택1):
-    • claude-code-router  (Claude Code 사용 시 추천)
-        npm install -g @musistudio/claude-code-router   # 패키지명·설정은 최신 확인
-        → 설정 예시: FALLBACK.md
-    • LiteLLM             (여러 프로바이더)
-        pip install 'litellm[proxy]'  → litellm.config.yaml 의 fallbacks
+# 5) bin 실행 권한
+chmod +x bin/effi bin/effi-run bin/effi-pick bin/effi-new bin/effi-classify bin/effi-review \
+  bin/effi-route bin/effi-accounts bin/effi-catalog 2>/dev/null || true
 
-  ※ 두 도구는 월 단위로 바뀌어 자동 설치를 넣지 않았습니다. FALLBACK.md 참고.
+# 6) 사용자 config 안내
+say "다음: PATH + v4 설정"
+cat <<'EOF'
+  export PATH="$PWD/bin:$PATH"
+
+  # 멀티 Claude 계정 (선택)
+  effi accounts init
+  effi accounts threshold 80
+  # accounts.json 의 api_key_env 에 맞는 환경변수 설정
+  # effi accounts meter <id> <0-100>
+
+  # 태스크 라우팅 스모크
+  effi route "implement auth middleware + tests"
+  effi catalog status
+
+  # 세션 규칙
+  ln -s "$PWD/CLAUDE.md" /path/to/project/CLAUDE.md
+
+  구독 OAuth를 제3 라우터에 넣지 마세요 (ToS).
+  API 키 자동 페일오버가 필요하면 LiteLLM / claude-code-router (키 전용).
 EOF
 
-say "폴백 런처 설치 (선택)"
-cat <<'EOF'
-  구독 사용자는 라우터 대신 effi 토글을 씁니다 (구독 프록시는 Anthropic ToS 위반):
-    ln -s "$PWD/bin/effi" /opt/homebrew/bin/effi    # 또는 PATH에 bin/ 추가
-    effi            # 평소 = 구독 Claude
-    effi local      # 한도 소진 시 → 로컬(무료)
-    effi status     # 상태
-EOF
-
-say "완료. 남은 것: effi 를 PATH에 넣기 + ORCHESTRATION.md를 세션 규칙으로 물리기."
+say "완료. effi help · docs/why.md (v4 근거)"

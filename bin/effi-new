@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# effi-new — tasks/<이름>/ 스캐폴드 + effi-route로 grade/model 프리필
+#
+#   effi-new tip-app
+#   effi-new tip-app "CLI 랜덤 팁 출력기"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+NAME="${1:-}"
+GOAL="${2:-}"
+[ -z "$NAME" ] && { echo "사용법: effi-new <작업명> [목표 한 줄]" >&2; exit 1; }
+
+NAME="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g')"
+DIR="$ROOT/tasks/$NAME"
+if [ -e "$DIR" ]; then
+  echo "이미 있음: $DIR" >&2
+  exit 1
+fi
+
+mkdir -p "$DIR/workers/review"
+TODAY="$(date +%Y-%m-%d)"
+NOW="$(date +%Y-%m-%d\ %H:%M)"
+ROUTE_TEXT="${GOAL:-$NAME}"
+
+python3 - "$ROOT" "$DIR" "$NAME" "$TODAY" "$NOW" "$GOAL" "$ROUTE_TEXT" <<'PY'
+import json, sys
+from pathlib import Path
+
+root, out_dir, name, today, now, goal, route_text = sys.argv[1:8]
+sys.path.insert(0, str(Path(root) / "lib"))
+from effi_core import recommend
+
+rec = recommend(route_text)
+primary = f"{rec['primary_provider']}/{rec['primary_model']}"
+grade = rec.get("grade", "M")
+domain = rec.get("domain", "implement")
+review = rec.get("review", "clean_context")
+tier = rec.get("start_tier", "mid")
+
+text = (Path(root) / "templates" / "task.md").read_text(encoding="utf-8")
+text = text.replace("[작업명]", name).replace("<YYYY-MM-DD>", today)
+text = text.replace("grade: M", f"grade: {grade}", 1)
+text = text.replace("domain: implement", f"domain: {domain}", 1)
+text = text.replace("primary: claude/claude-sonnet-5", f"primary: {primary}", 1)
+text = text.replace("start_tier: mid", f"start_tier: {tier}", 1)
+text = text.replace("review: clean_context", f"review: {review}", 1)
+if goal:
+    text = text.replace("<!-- 한 문장. 무엇을 완료로 볼 것인가. -->", goal, 1)
+
+out = Path(out_dir)
+(out / "task.md").write_text(text, encoding="utf-8")
+(out / "log.md").write_text(
+    f"""# 로그 — {name}
+
+<!-- append-only. 수정/삭제 금지. -->
+
+[{now}] [DECISION] 작업 폴더 생성 (effi-new).
+[{now}] [TRIAGE] domain={domain} grade={grade} model={primary} review={review}
+""",
+    encoding="utf-8",
+)
+
+brief_src = Path(root) / "templates" / "review.md"
+brief_dst = out / "workers" / "review" / "brief.md"
+brief_dst.write_text(brief_src.read_text(encoding="utf-8"), encoding="utf-8")
+
+print(f"✓ {out}")
+print(f"  domain={domain}  grade={grade}  primary={primary}")
+print("  task.md  log.md  workers/review/brief.md")
+print("다음: ORCHESTRATION 루프 (TRIAGE 완료 → PLAN/DO/VERIFY)")
+PY

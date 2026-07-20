@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "catalog_version": "2026.07.20",
+  "updated_at": "2026-07-20",
+  "next_review_due": "2026-08-03",
+  "sources": [
+    "https://platform.claude.com/docs/en/about-claude/models",
+    "https://developers.openai.com/api/docs/models",
+    "https://ai.google.dev/gemini-api/docs/models",
+    "https://docs.x.ai/docs/models",
+    "https://ollama.com/search?q=coding",
+    "https://www.anthropic.com/engineering/multi-agent-research-system",
+    "https://cognition.com/blog/multi-agents-working"
+  ],
+  "notes": "Prices are USD per 1M tokens (input/output) at catalog date. Prefer aliases that track stable releases. Re-run `effi catalog update` every 14 days.",
+  "providers": {
+    "claude": {
+      "harness": "claude",
+      "auth": ["api_key", "subscription_oauth"],
+      "cache_friendly_main_thread": true,
+      "models": {
+        "claude-fable-5": {
+          "tier": "ultra",
+          "role": ["orchestrate", "architecture", "long_agent"],
+          "cost_in": 10.0,
+          "cost_out": 50.0,
+          "ctx": 1000000,
+          "strengths": ["long_horizon_agents", "hardest_reasoning"],
+          "weaknesses": ["expensive", "slower"]
+        },
+        "claude-opus-4-8": {
+          "tier": "top",
+          "role": ["orchestrate", "architecture", "debug_hard", "security", "review_adversarial"],
+          "cost_in": 5.0,
+          "cost_out": 25.0,
+          "ctx": 1000000,
+          "strengths": ["agentic_coding", "enterprise", "judgment"],
+          "weaknesses": ["cost"]
+        },
+        "claude-sonnet-5": {
+          "tier": "mid",
+          "role": ["implement", "refactor", "test", "docs", "review_style"],
+          "cost_in": 3.0,
+          "cost_out": 15.0,
+          "ctx": 1000000,
+          "strengths": ["speed_intelligence_balance", "default_coding"],
+          "weaknesses": ["not_for_hardest_judgment"]
+        },
+        "claude-haiku-4-5": {
+          "tier": "cheap",
+          "role": ["scan", "summarize", "boilerplate", "format"],
+          "cost_in": 1.0,
+          "cost_out": 5.0,
+          "ctx": 200000,
+          "strengths": ["fast", "cheap", "near_frontier_simple"],
+          "weaknesses": ["shallow_architecture"]
+        }
+      }
+    },
+    "openai": {
+      "harness": ["codex", "api"],
+      "auth": ["api_key", "chatgpt_subscription"],
+      "models": {
+        "gpt-5.6-sol": {
+          "alias": "gpt-5.6",
+          "tier": "top",
+          "role": ["architecture", "debug_hard", "complex_reasoning", "implement_hard"],
+          "cost_in": 5.0,
+          "cost_out": 30.0,
+          "ctx": 1050000,
+          "strengths": ["complex_professional", "coding"],
+          "weaknesses": ["expensive"]
+        },
+        "gpt-5.6-terra": {
+          "tier": "mid",
+          "role": ["implement", "refactor", "test", "review"],
+          "cost_in": 2.5,
+          "cost_out": 15.0,
+          "ctx": 1050000,
+          "strengths": ["balance_cost_quality"],
+          "weaknesses": []
+        },
+        "gpt-5.6-luna": {
+          "tier": "cheap",
+          "role": ["boilerplate", "scaffold", "docs", "bulk", "scan"],
+          "cost_in": 1.0,
+          "cost_out": 6.0,
+          "ctx": 1050000,
+          "strengths": ["high_volume", "cheap"],
+          "weaknesses": ["weaker_judgment"]
+        }
+      }
+    },
+    "gemini": {
+      "harness": ["api", "cli"],
+      "auth": ["api_key"],
+      "models": {
+        "gemini-3.1-pro-preview": {
+          "tier": "top",
+          "role": ["architecture", "multimodal", "research", "design_visual"],
+          "cost_in": null,
+          "cost_out": null,
+          "ctx": 1000000,
+          "strengths": ["multimodal", "deep_reasoning", "vibe_coding"],
+          "weaknesses": ["preview_limits"]
+        },
+        "gemini-3.5-flash": {
+          "tier": "mid",
+          "role": ["implement", "docs", "long_context_scan", "design"],
+          "cost_in": null,
+          "cost_out": null,
+          "ctx": 1000000,
+          "strengths": ["agentic_coding", "sustained_performance", "value"],
+          "weaknesses": []
+        },
+        "gemini-3.1-flash-lite": {
+          "tier": "cheap",
+          "role": ["bulk", "summarize", "scaffold", "translate"],
+          "cost_in": null,
+          "cost_out": null,
+          "ctx": 1000000,
+          "strengths": ["cheapest_frontier_class", "speed"],
+          "weaknesses": ["shallow_hard_bugs"]
+        },
+        "gemini-3-pro-image": {
+          "tier": "special",
+          "role": ["design_image", "ui_mock"],
+          "cost_in": null,
+          "cost_out": null,
+          "strengths": ["studio_quality_image", "text_in_image"],
+          "weaknesses": ["not_code"]
+        }
+      }
+    },
+    "grok": {
+      "harness": ["api", "grok_build"],
+      "auth": ["api_key"],
+      "models": {
+        "grok-4.5": {
+          "tier": "top",
+          "role": ["architecture", "debug_hard", "implement_hard", "research_realtime"],
+          "cost_in": 2.0,
+          "cost_out": 6.0,
+          "ctx": 500000,
+          "strengths": ["intelligence_speed", "coding", "tool_search"],
+          "weaknesses": ["long_ctx_price_step"],
+          "notes": "Use with web/X search tools for realtime; knowledge cutoff 2026-02-01"
+        },
+        "grok-4.3": {
+          "tier": "mid",
+          "role": ["implement", "docs", "review", "long_context"],
+          "cost_in": 1.25,
+          "cost_out": 2.5,
+          "ctx": 1000000,
+          "strengths": ["1M_ctx", "value"],
+          "weaknesses": []
+        },
+        "grok-build-0.1": {
+          "tier": "mid",
+          "role": ["implement", "scaffold", "agent_coding"],
+          "cost_in": 1.0,
+          "cost_out": 2.0,
+          "ctx": 256000,
+          "strengths": ["coding_stack_value"],
+          "weaknesses": ["smaller_ctx"]
+        }
+      }
+    },
+    "local": {
+      "harness": "ollama",
+      "auth": [],
+      "models": {
+        "qwen3-coder:30b": {
+          "tier": "local_strong",
+          "role": ["implement_narrow", "agent_local", "refactor_local"],
+          "ram_gb": 20.0,
+          "strengths": ["moe_efficiency", "256k", "agentic"],
+          "weaknesses": ["needs_~20gb"]
+        },
+        "devstral": {
+          "tier": "local_strong",
+          "role": ["implement_narrow", "agent_local"],
+          "ram_gb": 15.0,
+          "strengths": ["swe_bench_46.8", "agentic"],
+          "weaknesses": ["needs_~15gb"]
+        },
+        "ornith:9b": {
+          "tier": "local_mid",
+          "role": ["implement_narrow", "scaffold", "test"],
+          "ram_gb": 6.0,
+          "strengths": ["agentic_coding", "self_improving_family"],
+          "weaknesses": ["weaker_than_30b"]
+        },
+        "gemma4:12b": {
+          "tier": "local_mid",
+          "role": ["implement_narrow", "docs", "reason_local"],
+          "ram_gb": 10.0,
+          "strengths": ["reasoning", "coding", "multimodal_local"],
+          "weaknesses": []
+        },
+        "deepcoder:14b": {
+          "tier": "local_mid",
+          "role": ["implement_narrow", "bugfix_local"],
+          "ram_gb": 10.0,
+          "strengths": ["coding_focused"],
+          "weaknesses": []
+        },
+        "qwen2.5-coder:7b": {
+          "tier": "local_fast",
+          "role": ["boilerplate", "translate", "docstring", "format"],
+          "ram_gb": 6.0,
+          "strengths": ["speed_16gb", "~26tok/s"],
+          "weaknesses": ["shallow"]
+        },
+        "qwen2.5-coder:3b": {
+          "tier": "local_fast",
+          "role": ["boilerplate", "translate", "format"],
+          "ram_gb": 3.0,
+          "strengths": ["busy_16gb", "~52tok/s"],
+          "weaknesses": ["very_shallow"]
+        },
+        "qwen2.5-coder:1.5b": {
+          "tier": "local_micro",
+          "role": ["format", "tiny_transform"],
+          "ram_gb": 1.8,
+          "strengths": ["fits_tight_ram"],
+          "weaknesses": ["minimal_quality"]
+        },
+        "deepcoder:1.5b": {
+          "tier": "local_micro",
+          "role": ["format", "tiny_transform"],
+          "ram_gb": 1.5,
+          "strengths": ["tiny"],
+          "weaknesses": ["minimal_quality"]
+        }
+      }
+    }
+  }
+}

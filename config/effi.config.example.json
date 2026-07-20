@@ -1,0 +1,22 @@
+{
+  "switch_threshold_percent": 80,
+  "prefer_providers": ["claude", "openai", "gemini", "grok", "local"],
+  "main_thread_provider": "claude",
+  "main_thread_model": "claude-sonnet-5",
+  "escalate_model": "claude-opus-4-8",
+  "catalog_auto_remind_days": 14,
+  "local": {
+    "enabled": true,
+    "ollama_url": "http://localhost:11434",
+    "ram_margin_gb": 2.0,
+    "ram_cap_ratio": 0.6
+  },
+  "accounts": {
+    "path": "~/.config/effi/accounts.json",
+    "state_path": "~/.config/effi/state.json"
+  },
+  "hooks": {
+    "on_account_switch": null,
+    "on_route": null
+  }
+}

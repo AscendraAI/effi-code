@@ -1,52 +1,148 @@
 #!/usr/bin/env bash
-# effi-code 런처/토글 — 평소 구독 Claude, 쿼터 소진 시 로컬로 전환.
-#   ( effi-code 툴킷의 런처. 명령 이름 effi )
+# effi-code v4 launcher — multi-provider routing + account rotation + local pick
 #
-#   effi            평소 = CLOUD (구독 Claude+Codex+Gemini 오케스트레이션)
-#   effi local      LOCAL 모드로 Claude Code 실행 (무료, 쿼터 백스톱)
-#   effi cloud      CLOUD 모드로 실행 (기본과 동일)
-#   effi status     현재 모드/로컬 상태 확인
+#   effi                 CLOUD Claude (auto account select under usage threshold)
+#   effi local           LOCAL Ollama backend for Claude Code
+#   effi cloud           same as default cloud
+#   effi status          health: accounts, catalog, local model
 #
-# 구독은 프록시로 못 돌린다(Anthropic ToS, 2026-02). 그래서 "라우터"가 아니라
-# 이 토글이 정답 — 한도 메시지를 보면 `effi local`로 이어서 작업.
+#   effi route "…"       task → optimal model (claude/codex/gemini/grok/local)
+#   effi accounts …      multi-account rotation
+#   effi catalog …       biweekly model catalog
+#   effi pick / run / new / review / classify
+#
+# ToS: never proxy subscription OAuth through third-party routers.
 set -euo pipefail
 
-LOCAL_MODEL="${EFFI_LOCAL_MODEL:-}"   # 비었으면 effi-pick가 현재 가용 메모리에 맞춰 자동 선택
-OLLAMA_URL="http://localhost:11434"
+BIN="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$BIN/.." && pwd)"
+export PATH="$BIN:$PATH"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+LOCAL_MODEL="${EFFI_LOCAL_MODEL:-}"
+OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
+
+curl_ollama() {
+  curl -sf --connect-timeout 1 --max-time 3 "$@"
+}
 
 ensure_ollama() {
-  if ! curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
-    echo "  · Ollama 데몬 기동…"; (ollama serve >/tmp/ollama-serve.log 2>&1 &) ; sleep 2
+  if ! curl_ollama "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
+    echo "  · Ollama starting…"
+    (ollama serve >/tmp/ollama-serve.log 2>&1 &)
+    sleep 2
   fi
 }
 
-MODE="${1:-cloud}"; shift || true
+apply_cloud_account() {
+  # Rotate Claude account if configured; ignore if none
+  if [ -f "$HOME/.config/effi/accounts.json" ]; then
+    if OUT="$("$BIN/effi-accounts" select 2>&1)"; then
+      echo "$OUT" | sed 's/^/  · /'
+      # shellcheck disable=SC1090
+      eval "$("$BIN/effi-accounts" env 2>/dev/null)" || true
+    fi
+  fi
+}
+
+MODE="${1:-cloud}"
+if [ "$#" -gt 0 ]; then shift; fi
+
 case "$MODE" in
   local)
     ensure_ollama
-    if [ -z "$LOCAL_MODEL" ]; then LOCAL_MODEL="$(effi-pick 2>/dev/null || echo qwen2.5-coder:3b)"; fi
-    ollama list 2>/dev/null | grep -q "$LOCAL_MODEL" || { echo "  · $LOCAL_MODEL 다운로드…"; ollama pull "$LOCAL_MODEL"; }
+    if [ -z "$LOCAL_MODEL" ]; then
+      LOCAL_MODEL="$("$BIN/effi-pick" 2>/dev/null || echo qwen2.5-coder:3b)"
+    fi
+    if ! ollama list 2>/dev/null | grep -q "${LOCAL_MODEL%%:*}"; then
+      echo "  · pulling $LOCAL_MODEL …"
+      ollama pull "$LOCAL_MODEL" || true
+    fi
     export ANTHROPIC_BASE_URL="$OLLAMA_URL"
     export ANTHROPIC_API_KEY="ollama"
     export ANTHROPIC_MODEL="$LOCAL_MODEL"
     export ANTHROPIC_SMALL_FAST_MODEL="$LOCAL_MODEL"
-    export OLLAMA_KEEP_ALIVE="30m"           # 모델을 메모리에 유지 → 매 호출 로드 지연 제거
-    echo "▶ LOCAL 모드 · $LOCAL_MODEL (무료·로컬). 스코프 좁은 작업 위주로. 어려운 건 유료 복구 후."
-    # 작은 로컬 모델은 MCP 도구 수백 개에 파묻히면 오작동한다.
-    # --strict-mcp-config 로 MCP 전부 끄고 내장 코딩 도구만 남긴다(안정성↑).
+    export OLLAMA_KEEP_ALIVE="30m"
+    echo "▶ LOCAL · $LOCAL_MODEL · narrow tasks only · MCP off"
     exec claude --strict-mcp-config "$@"
     ;;
   cloud)
-    unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL 2>/dev/null || true
-    echo "▶ CLOUD 모드 · 구독 Claude"
-    exec claude "$@"
+    # clear local overrides
+    unset ANTHROPIC_BASE_URL ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL 2>/dev/null || true
+    apply_cloud_account
+    echo "▶ CLOUD · rules: ORCHESTRATION.md + catalog routing"
+    if command -v claude >/dev/null 2>&1; then
+      exec claude "$@"
+    else
+      echo "claude CLI not found" >&2; exit 1
+    fi
     ;;
   status)
-    if [ -n "$LOCAL_MODEL" ]; then echo "로컬 모델(고정): $LOCAL_MODEL"; else echo "로컬 모델(자동): $(effi-pick 2>/dev/null || echo '?')"; fi
-    if curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
-      echo "Ollama: ✅ 실행 중"; ollama list 2>/dev/null | grep -iE 'coder|devstral' || true
-    else echo "Ollama: ❌ 꺼짐 (effi local 시 자동 기동)"; fi
+    echo "=== effi-code v4 ==="
+    "$BIN/effi-catalog" status 2>/dev/null || true
+    echo
+    if [ -f "$HOME/.config/effi/accounts.json" ]; then
+      "$BIN/effi-accounts" status
+    else
+      echo "accounts: (not configured) → effi accounts init"
+    fi
+    echo
+    if [ -n "$LOCAL_MODEL" ]; then
+      echo "local model (pinned): $LOCAL_MODEL"
+    else
+      echo "local model (auto):"
+      "$BIN/effi-pick" 2>&1 || true
+    fi
+    if curl_ollama "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
+      echo "Ollama: ✅"
+      ollama list 2>/dev/null | head -15 || true
+    else
+      echo "Ollama: ❌ off"
+    fi
+    echo "orchestration: v4 multi-provider · single-writer · clean-context verify"
+    ;;
+  route|recommend) exec "$BIN/effi-route" "$@" ;;
+  accounts|account) exec "$BIN/effi-accounts" "$@" ;;
+  catalog) exec "$BIN/effi-catalog" "$@" ;;
+  pick) exec "$BIN/effi-pick" "$@" ;;
+  run) exec "$BIN/effi-run" "$@" ;;
+  new) exec "$BIN/effi-new" "$@" ;;
+  classify) exec "$BIN/effi-classify" "$@" ;;
+  review) exec "$BIN/effi-review" "$@" ;;
+  help|-h|--help)
+    cat <<'EOF'
+effi v4 — cost-aware multi-provider coding orchestrator
+
+Sessions
+  effi [cloud]             Claude cloud (account auto-rotate if configured)
+  effi local               Ollama local backend
+  effi status              accounts + catalog + local
+
+Routing (Claude · Codex/OpenAI · Gemini · Grok · Local)
+  effi route "task…"       best model for task (token-efficient)
+  effi route --json "…"
+  effi pick [--task "…"]   RAM+task local model
+  effi run [-t hint] "…"   local mechanical worker
+
+Accounts (Claude multi-account)
+  effi accounts init
+  effi accounts threshold 80
+  effi accounts meter <id> <0-100>
+  effi accounts select|list|status
+
+Catalog (update every ~14 days)
+  effi catalog status|show|research|bump
+
+Tasks
+  effi new <name> [goal]
+  effi review -o tasks/…/workers/review
+  effi classify "…"
+
+Rules: ORCHESTRATION.md  Routing: ROUTING.md  Matrix: catalog/task-routing.json
+EOF
     ;;
   *)
-    echo "사용법: effi [cloud|local|status]"; exit 1 ;;
+    echo "usage: effi [cloud|local|status|route|accounts|catalog|pick|run|new|review|help]" >&2
+    exit 1
+    ;;
 esac

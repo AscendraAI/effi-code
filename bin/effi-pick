@@ -1,41 +1,57 @@
 #!/usr/bin/env bash
-# effi-pick — 현재 "가용 메모리"에 맞는 로컬 코딩 모델을 고른다 (컴퓨터가 느려지지 않게).
-# stdout = 추천 모델명 (스크립트가 소비). stderr = 근거.
-# 규칙: 모델 런타임 footprint ≤ min(가용+현재로드모델 − 여유4GB, 총RAM×60%).
+# effi-pick — task-aware + RAM-aware local model recommendation
+#   effi-pick                     # best general local for current RAM
+#   effi-pick --task "번역 40개"  # role-biased pick
+#   effi-pick --json
 set -euo pipefail
-OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
 
-OLLAMA_URL="$OLLAMA_URL" python3 - <<'PY'
-import os, re, sys, json, subprocess, urllib.request
-url = os.environ["OLLAMA_URL"]
-total = int(subprocess.check_output(["sysctl","-n","hw.memsize"])) / 1024**3
+TASK=""; JSON=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --task|-t) TASK="$2"; shift 2 ;;
+    --json|-j) JSON=1; shift ;;
+    -h|--help) echo "usage: effi-pick [--task text] [--json]"; exit 0 ;;
+    *) TASK="${TASK:+$TASK }$1"; shift ;;
+  esac
+done
 
-vm = subprocess.check_output(["vm_stat"]).decode()
-page = int(re.search(r"page size of (\d+) bytes", vm).group(1))
-def pg(name):
-    m = re.search(re.escape(name) + r":\s+(\d+)", vm); return int(m.group(1)) if m else 0
-avail = (pg("Pages free")+pg("Pages inactive")+pg("Pages speculative")+pg("Pages purgeable")) * page / 1024**3
+TASK="$TASK" JSON="$JSON" python3 - <<'PY'
+import os, sys
+from effi_core import pick_local, recommend, print_json
 
-loaded = 0.0
-try:
-    with urllib.request.urlopen(url + "/api/ps", timeout=3) as r:
-        for m in json.load(r).get("models", []): loaded += m.get("size", 0)/1024**3
-except Exception: pass
+task = os.environ.get("TASK") or ""
+roles = None
+if task:
+    rec = recommend(task)
+    # map domain to local roles
+    d = rec["domain"]
+    role_map = {
+        "bulk": ["boilerplate", "translate", "docstring", "format"],
+        "docs": ["docstring", "translate"],
+        "test": ["scaffold", "boilerplate"],
+        "implement": ["implement_narrow", "scaffold"],
+        "refactor": ["implement_narrow", "boilerplate"],
+        "debug": ["implement_narrow"],
+    }
+    roles = role_map.get(d, ["implement_narrow"])
 
-MARGIN = 2.0                               # OS+앱 여유 버퍼
-budget = avail + loaded - MARGIN          # 모델 교체 시 현재 로드분은 회수됨
-cap    = total * 0.60                       # 모델은 총 RAM의 60% 이하 (16GB→9.6: 14B 제외)
-eff    = min(budget, cap)
+pick = pick_local(roles)
+# stderr rationale for scripts that only want model on stdout
+print(
+    f"[effi-pick] total={pick['total_gb']}GB avail={pick['avail_gb']}GB "
+    f"budget={pick['budget_gb']}GB → {pick['model']}  ({pick['reason']})",
+    file=sys.stderr,
+)
+if not pick.get("fit"):
+    print("[effi-pick] ⚠️ RAM tight — close apps for a stronger model", file=sys.stderr)
 
-# 후보: (모델, 런타임GB 추정) 큰 것부터
-cands = [("devstral",15.0),("qwen2.5-coder:14b",10.0),("qwen2.5-coder:7b",6.0),
-         ("qwen2.5-coder:3b",3.0),("qwen2.5-coder:1.5b",1.8)]
-pick = cands[-1][0]
-for name, gb in cands:
-    if gb <= eff: pick = name; break
-
-sys.stderr.write(f"[effi-pick] 총 {total:.0f}GB · 가용 {avail:.1f}GB · 현재로드 {loaded:.1f}GB → 예산 {eff:.1f}GB → {pick}\n")
-if eff < 2.0:
-    sys.stderr.write("[effi-pick] ⚠️ 메모리 매우 부족 — 앱을 닫으면 더 큰(더 똑똑한) 모델을 쓸 수 있어요.\n")
-print(pick)
+if os.environ.get("JSON") == "1":
+    if task:
+        pick["task_domain"] = rec["domain"]
+        pick["roles"] = roles
+    print_json(pick)
+else:
+    print(pick["model"])
 PY

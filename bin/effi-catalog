@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# effi-catalog — model catalog lifecycle (biweekly review)
+#
+#   effi catalog status
+#   effi catalog show
+#   effi catalog bump          # mark reviewed today; next due +14d
+#   effi catalog research      # print deep-research checklist + source URLs
+#   effi catalog open          # open catalog files in $EDITOR
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+CMD="${1:-status}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$CMD" in
+  status)
+    python3 - <<'PY'
+from effi_core import catalog_status, print_json
+print_json(catalog_status())
+PY
+    ;;
+  show)
+    python3 - <<'PY'
+import json
+from effi_core import load_catalog, load_routing
+cat = load_catalog()
+print(f"version: {cat.get('catalog_version')}  updated: {cat.get('updated_at')}  next: {cat.get('next_review_due')}")
+print("\n# Cloud models")
+for prov, pdata in cat["providers"].items():
+    if prov == "local":
+        continue
+    print(f"\n## {prov}")
+    for mid, m in pdata.get("models", {}).items():
+        print(f"  - {mid:28} tier={m.get('tier'):6}  roles={','.join(m.get('role') or [])[:60]}")
+print("\n# Local models")
+for mid, m in cat["providers"]["local"]["models"].items():
+    print(f"  - {mid:28} ram≈{m.get('ram_gb')}GB  tier={m.get('tier')}")
+print("\n# Domains")
+for d, spec in load_routing()["domains"].items():
+    p = spec.get("primary") or {}
+    print(f"  - {d:16} → {p.get('provider')}/{p.get('model')}")
+PY
+    ;;
+  bump)
+    python3 - <<'PY'
+from effi_core import bump_catalog_dates, print_json
+print("✓ catalog dates bumped (models NOT auto-changed — edit catalog/*.json after research)")
+print_json(bump_catalog_dates())
+PY
+    ;;
+  research)
+    cat <<EOF
+# Biweekly catalog research checklist (≈14 days)
+
+## 1. Official model pages (must)
+- Claude:  https://platform.claude.com/docs/en/about-claude/models
+- OpenAI:  https://developers.openai.com/api/docs/models
+- Gemini:  https://ai.google.dev/gemini-api/docs/models
+- Grok/xAI: https://docs.x.ai/docs/models
+- Ollama coding: https://ollama.com/search?q=coding
+
+## 2. Orchestration evidence (re-check when architecture changes)
+- Anthropic multi-agent: https://www.anthropic.com/engineering/multi-agent-research-system
+- Cognition multi-agent: https://cognition.com/blog/multi-agents-working
+- Claude Agent Teams: https://code.claude.com/docs/en/agent-teams
+
+## 3. Update files
+1. Edit catalog/models.json  (IDs, prices, ram_gb, roles)
+2. Edit catalog/task-routing.json  (domain → primary/alternates)
+3. Run:  effi catalog bump
+4. Smoke:  effi route "implement auth middleware"
+           effi route "UI mockup design"
+           effi route "40 strings translate"
+           effi pick
+
+## 4. Optional tools for discovery
+- Ollama library API: curl -s http://localhost:11434/api/tags
+- OpenRouter models (discovery only): https://openrouter.ai/models
+- LMSYS / Artificial Analysis leaderboards (quality signal, not routing truth)
+
+## 5. Principles that must NOT regress
+- Main Claude thread = one provider (cache continuity)
+- Single writer; clean-context review
+- Local = task+RAM pick, never fixed single model
+- Escalate only after verify fail (≤2 attempts/tier)
+EOF
+    ;;
+  open)
+    ${EDITOR:-vi} "$ROOT/catalog/models.json" "$ROOT/catalog/task-routing.json"
+    ;;
+  -h|--help|help)
+    sed -n '2,10p' "$0" | tr -d '#'
+    ;;
+  *)
+    echo "unknown: $CMD" >&2; exit 1
+    ;;
+esac

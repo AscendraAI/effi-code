@@ -15,27 +15,31 @@
 ## 쓰는 법 — `effi` 런처 (`bin/effi`)
 
 ```bash
-# PATH에 넣기 (1회)
-ln -s "$PWD/bin/effi" /opt/homebrew/bin/effi    # 또는 export PATH="$PWD/bin:$PATH"
+export PATH="$PWD/bin:$PATH"   # 또는 bin/* 심볼릭 링크
 
-effi            # 평소 = CLOUD (구독 Claude)
-effi local      # 한도 소진 시 → 로컬(무료)로 Claude Code 실행
-effi status     # 현재 로컬 모델/Ollama 상태
+effi            # CLOUD — accounts.json 있으면 사용량 임계 계정 자동 선택
+effi local      # 한도 소진 → 로컬(무료) Claude Code
+effi status     # 계정·카탈로그·로컬
+effi route "…"  # 태스크별 최적 모델 (4사+로컬)
+effi accounts threshold 80
+effi accounts meter <id> <percent>
 ```
 
-한도 메시지를 보면 `effi local`로 이어서 작업 → 유료 복구되면 새 창에서 `effi`(cloud).
-`effi local`은 Ollama 자동 기동 + **모델 메모리 유지(keep-alive)**로 로드 지연도 없앤다.
+한도 메시지 → `effi local` → 유료 복구 후 `effi`(cloud).  
+`effi local`: Ollama 기동 + keep-alive + MCP 차단 + **태스크/RAM 기반 모델 pick**.
 
 ## 로컬 모델 선택 — 속도 vs 품질
 
-16GB 맥 실측:
+`effi-pick`이 가용 메모리로 자동 선택. 고정은 `EFFI_LOCAL_MODEL=…`.
 
-| 모델 | 속도 | 용도 |
+| 상황 | 모델 | 메모 |
 |---|---|---|
-| **qwen2.5-coder:7b** (기본) | **26 tok/s** | 빠름 — 폴백 기본값 |
-| qwen2.5-coder:14b | 13 tok/s | 느리지만 더 정확 |
+| 32GB+ 여유 | `qwen3-coder:30b` | MoE·256K, 로컬 상한에 가깝 |
+| 24GB+ | `devstral` | 에이전트 코딩, SWE-bench 46.8% |
+| 16GB 여유 | `qwen2.5-coder:7b` | 실측 ~26 tok/s |
+| 16GB 바쁨 | `qwen2.5-coder:3b` | 실측 ~52 tok/s |
 
-24GB면 `EFFI_LOCAL_MODEL=devstral effi local`. 더 빠르게: `brew upgrade ollama`(0.30+는 MLX 백엔드로 Apple Silicon 가속).
+상세 사다리: `LOCAL-MODELS.md`. 더 빠르게: `brew upgrade ollama` (Apple Silicon MLX 백엔드).
 
 ## (선택) API 키를 쓰는 경우 — 진짜 자동 폴백
 구독이 아니라 **Anthropic API 키**로 Claude Code를 쓴다면, 그땐 프록시가 ToS-클린 →

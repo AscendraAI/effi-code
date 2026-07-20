@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-20",
+  "philosophy": [
+    "Main Claude thread stays on one provider for prompt-cache continuity (miss ~10x).",
+    "Route isolated subtasks by capability×cost; escalate only after failed verification (max 2 retries/tier).",
+    "Writes stay single-threaded; helpers inject intelligence (review/research), not parallel writers (Cognition 2026).",
+    "Multi-agent only for XL parallel-read/research/review; coding default is single strong thread (Anthropic 15x tokens)."
+  ],
+  "domains": {
+    "plan": {
+      "label": "기획 / PRD / 범위",
+      "keywords": ["plan", "prd", "roadmap", "scope", "기획", "요구사항", "user story", "jtbd", "우선순위"],
+      "grade_default": "L",
+      "primary": {"provider": "claude", "model": "claude-opus-4-8", "why": "judgment-heavy product decisions"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-sol", "why": "strong professional reasoning"},
+        {"provider": "grok", "model": "grok-4.5", "why": "fast top-tier + search tools for market context"}
+      ],
+      "avoid": ["local", "haiku", "luna"],
+      "verify": "human_gate",
+      "token_tips": ["Keep plan artifacts on disk; don't re-feed full chat history each turn"]
+    },
+    "architecture": {
+      "label": "아키텍처 / 시스템 설계",
+      "keywords": ["architect", "아키텍처", "system design", "tradeoff", "scalability", "schema", "data model"],
+      "grade_default": "L",
+      "primary": {"provider": "claude", "model": "claude-opus-4-8", "why": "best agentic design judgment for coding systems"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-sol"},
+        {"provider": "gemini", "model": "gemini-3.1-pro-preview", "why": "complex multimodal/system reasoning"}
+      ],
+      "avoid": ["local", "cheap"],
+      "verify": "clean_context_review"
+    },
+    "design": {
+      "label": "UI/UX 디자인 · 목업",
+      "keywords": ["design", "ui", "ux", "mockup", "wireframe", "디자인", "figma", "layout", "visual"],
+      "grade_default": "M",
+      "primary": {"provider": "gemini", "model": "gemini-3.5-flash", "why": "strong multimodal + design workflows"},
+      "alternates": [
+        {"provider": "gemini", "model": "gemini-3-pro-image", "why": "image/mock generation"},
+        {"provider": "claude", "model": "claude-sonnet-5", "why": "design system + component code"}
+      ],
+      "local_ok": false,
+      "verify": "human_visual"
+    },
+    "research": {
+      "label": "리서치 / 조사",
+      "keywords": ["research", "조사", "compare", "survey", "papers", "benchmark", "deep research"],
+      "grade_default": "L",
+      "primary": {"provider": "gemini", "model": "gemini-3.1-pro-preview", "why": "deep research / breadth"},
+      "alternates": [
+        {"provider": "grok", "model": "grok-4.5", "why": "realtime web/X search tools"},
+        {"provider": "claude", "model": "claude-opus-4-8", "why": "lead for multi-subagent research pattern"}
+      ],
+      "parallel": "subagents_readonly",
+      "verify": "source_check"
+    },
+    "implement": {
+      "label": "구현 / 코딩",
+      "keywords": ["implement", "구현", "feature", "코드", "coding", "write code", "build", "middleware", "미들웨어", "endpoint", "엔드포인트", "handler", "api", "function", "모듈", "module"],
+      "grade_default": "M",
+      "primary": {"provider": "claude", "model": "claude-sonnet-5", "why": "default coding workhorse; cache main thread"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-terra", "why": "cost/quality balance (Codex)"},
+        {"provider": "grok", "model": "grok-build-0.1", "why": "coding value"},
+        {"provider": "gemini", "model": "gemini-3.5-flash"}
+      ],
+      "local_roles": ["implement_narrow", "scaffold"],
+      "verify": "tests+clean_context_review"
+    },
+    "implement_hard": {
+      "label": "고난도 구현",
+      "keywords": ["hard", "complex", "multi-module", "distributed", "concurrency", "고난도", "까다로운"],
+      "grade_default": "L",
+      "primary": {"provider": "claude", "model": "claude-opus-4-8"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-sol"},
+        {"provider": "grok", "model": "grok-4.5"}
+      ],
+      "verify": "tests+adversarial_review"
+    },
+    "debug": {
+      "label": "디버깅",
+      "keywords": ["debug", "bug", "fix", "error", "stacktrace", "디버그", "버그", "회귀"],
+      "grade_default": "M",
+      "primary": {"provider": "claude", "model": "claude-sonnet-5", "why": "most bugs"},
+      "escalate": {"provider": "claude", "model": "claude-opus-4-8", "when": "heisenbug|race|multi-service"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-sol", "why": "competing hypotheses"},
+        {"provider": "grok", "model": "grok-4.5"}
+      ],
+      "parallel": "competing_hypotheses_readonly",
+      "verify": "repro_test"
+    },
+    "review": {
+      "label": "코드 리뷰 (적대)",
+      "keywords": ["review", "리뷰", "pr review", "code review", "감사"],
+      "grade_default": "M",
+      "primary": {"provider": "claude", "model": "claude-sonnet-5", "why": "clean-context mid is enough for many PRs"},
+      "security_upgrade": {"provider": "claude", "model": "claude-opus-4-8"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-terra", "why": "cross-frontier second opinion"},
+        {"provider": "grok", "model": "grok-4.3"}
+      ],
+      "rules": ["NEVER same context as generator", "diff-only input"],
+      "verify": "repro_each_finding"
+    },
+    "test": {
+      "label": "테스트 작성",
+      "keywords": ["test", "테스트", "unit test", "e2e", "coverage", "pytest", "jest"],
+      "grade_default": "M",
+      "primary": {"provider": "claude", "model": "claude-sonnet-5"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-terra"},
+        {"provider": "openai", "model": "gpt-5.6-luna", "why": "bulk test scaffolding"}
+      ],
+      "local_roles": ["scaffold", "boilerplate"],
+      "verify": "run_tests"
+    },
+    "refactor": {
+      "label": "리팩터링",
+      "keywords": ["refactor", "리팩터", "cleanup", "rename", "extract"],
+      "grade_default": "M",
+      "primary": {"provider": "claude", "model": "claude-sonnet-5"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-terra"},
+        {"provider": "grok", "model": "grok-build-0.1"}
+      ],
+      "local_roles": ["boilerplate"],
+      "verify": "tests"
+    },
+    "docs": {
+      "label": "문서화",
+      "keywords": ["docs", "readme", "documentation", "문서", "changelog", "comment"],
+      "grade_default": "S",
+      "primary": {"provider": "claude", "model": "claude-haiku-4-5", "why": "cheap enough for prose"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-luna"},
+        {"provider": "gemini", "model": "gemini-3.1-flash-lite"},
+        {"provider": "grok", "model": "grok-4.3"}
+      ],
+      "local_roles": ["docstring", "translate"],
+      "verify": "spot_check"
+    },
+    "bulk": {
+      "label": "기계적 대량 작업",
+      "keywords": ["translate", "번역", "docstring", "boilerplate", "i18n", "bulk", "대량", "scaffold", "format"],
+      "grade_default": "S",
+      "primary": {"provider": "local", "model": "AUTO", "why": "free; confirm with user first"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-luna"},
+        {"provider": "gemini", "model": "gemini-3.1-flash-lite"},
+        {"provider": "claude", "model": "claude-haiku-4-5"}
+      ],
+      "verify": "schema_or_sample"
+    },
+    "security": {
+      "label": "보안 분석",
+      "keywords": ["security", "보안", "owasp", "cve", "auth", "xss", "injection", "secret"],
+      "grade_default": "L",
+      "primary": {"provider": "claude", "model": "claude-opus-4-8"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-sol"}
+      ],
+      "avoid": ["local", "cheap"],
+      "verify": "manual_threat_model"
+    },
+    "deploy": {
+      "label": "배포 / 인프라 / CI",
+      "keywords": ["deploy", "배포", "ci", "cd", "docker", "k8s", "terraform", "vercel", "infra", "pipeline"],
+      "grade_default": "M",
+      "primary": {"provider": "claude", "model": "claude-sonnet-5", "why": "infra-as-code + runbooks"},
+      "alternates": [
+        {"provider": "openai", "model": "gpt-5.6-terra"},
+        {"provider": "claude", "model": "claude-opus-4-8", "why": "prod-critical / multi-env"}
+      ],
+      "verify": "dry_run+checklist",
+      "approval": "required_for_prod"
+    },
+    "orchestrate": {
+      "label": "오케스트레이션 / 리드",
+      "keywords": ["orchestrat", "coordinate", "lead", "delegate", "오케스트"],
+      "grade_default": "L",
+      "primary": {"provider": "claude", "model": "claude-opus-4-8", "why": "keep main thread on Claude for cache + judgment"},
+      "alternates": [
+        {"provider": "claude", "model": "claude-fable-5", "why": "longest-running agentic lead when budget allows"}
+      ],
+      "rules": ["never fragment main thread across providers mid-session"]
+    }
+  },
+  "cascade": {
+    "order_cloud": ["local", "cheap", "mid", "top", "ultra"],
+    "max_attempts_per_tier": 2,
+    "escalate_on": ["verify_fail", "ambiguous_spec", "security_flag", "multi_file_regression"]
+  },
+  "cost_guards": {
+    "default_start_tier": "mid",
+    "prefer_local_for": ["bulk", "docs_mechanical"],
+    "main_thread_provider_lock": "claude",
+    "subtask_may_cross_provider": true
+  }
+}

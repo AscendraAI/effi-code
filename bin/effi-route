@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# effi-route — task → optimal model (Claude/Codex/Gemini/Grok/Local)
+#   effi-route "auth 미들웨어 + 테스트"
+#   effi-route --json "deploy to staging"
+#   effi-route --local "40개 문자열 번역"
+#   effi-route --compact "refactor utils"
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+JSON=0; LOCAL=0; COMPACT=0
+ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --json|-j) JSON=1; shift ;;
+    --local) LOCAL=1; shift ;;
+    --compact|-c) COMPACT=1; shift ;;
+    -h|--help)
+      echo "사용법: effi-route [--json] [--local] [--compact] \"task\""
+      exit 0 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+TEXT="${ARGS[*]:-}"
+if [ -z "$TEXT" ]; then
+  if [ ! -t 0 ]; then TEXT="$(cat)"; else
+    echo "사용법: effi-route \"task description\"" >&2; exit 1
+  fi
+fi
+
+JSON="$JSON" LOCAL="$LOCAL" COMPACT="$COMPACT" TEXT="$TEXT" python3 - <<'PY'
+import os, sys
+from effi_core import recommend, format_route, print_json
+
+rec = recommend(os.environ["TEXT"], prefer_local=os.environ.get("LOCAL") == "1")
+if os.environ.get("JSON") == "1":
+    print_json(rec)
+elif os.environ.get("COMPACT") == "1":
+    print(format_route(rec, compact=True))
+else:
+    print(format_route(rec))
+    print()
+    print("# TRIAGE line for log.md:")
+    print(
+        f"[TRIAGE] domain={rec['domain']} grade={rec['grade']} "
+        f"model={rec['primary_provider']}/{rec['primary_model']} "
+        f"review={rec['review']}"
+    )
+PY

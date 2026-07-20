@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# effi-accounts — multi Claude account registry + usage-threshold rotation
+#
+#   effi accounts init                 # scaffold ~/.config/effi/accounts.json
+#   effi accounts list
+#   effi accounts threshold 80         # switch when usage >= 80%
+#   effi accounts meter work-primary 72
+#   effi accounts select               # pick under-threshold account
+#   effi accounts select --id work-secondary
+#   effi accounts env                  # print export lines for active account
+#   effi accounts status
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+CMD="${1:-status}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$CMD" in
+  init)
+    mkdir -p "$HOME/.config/effi"
+    if [ -f "$HOME/.config/effi/accounts.json" ]; then
+      echo "already exists: ~/.config/effi/accounts.json" >&2; exit 1
+    fi
+    cp "$ROOT/config/accounts.example.json" "$HOME/.config/effi/accounts.json"
+    chmod 600 "$HOME/.config/effi/accounts.json"
+    if [ ! -f "$HOME/.config/effi/config.json" ]; then
+      cp "$ROOT/config/effi.config.example.json" "$HOME/.config/effi/config.json"
+      chmod 600 "$HOME/.config/effi/config.json"
+    fi
+    echo "✓ ~/.config/effi/accounts.json"
+    echo "  1) set api_key_env values + real env vars"
+    echo "  2) effi accounts threshold 80"
+    echo "  3) effi accounts meter <id> <0-100>"
+    ;;
+  list|status|select|threshold|meter|env|apply)
+    CMD="$CMD" ARGS="$*" python3 - <<'PY'
+import os, sys, shlex
+from effi_core import (
+    list_accounts, get_threshold, set_threshold, set_meter,
+    select_account, apply_account_env, load_state, load_accounts,
+    DEFAULT_ACCOUNTS, print_json,
+)
+
+cmd = os.environ["CMD"]
+args = shlex.split(os.environ.get("ARGS") or "")
+
+if cmd in ("list", "status"):
+    thr = get_threshold()
+    state = load_state()
+    print(f"threshold: {thr}%  (switch when usage >= threshold)")
+    print(f"active: {state.get('active_account_id') or '(none)'}")
+    print(f"file: {DEFAULT_ACCOUNTS}")
+    print()
+    accs = list_accounts()
+    if not accs:
+        print("no accounts — run: effi accounts init")
+        sys.exit(0)
+    for a in sorted(accs, key=lambda x: x.get("priority", 99)):
+        flag = "→" if a["id"] == state.get("active_account_id") else " "
+        en = "on " if a.get("enabled", True) else "off"
+        over = "⚠ OVER" if float(a.get("usage_percent") or 0) >= thr else "ok"
+        print(
+            f"{flag} {a['id']:20} prio={a.get('priority', '?')}  "
+            f"usage={float(a.get('usage_percent') or 0):5.1f}%  {over}  "
+            f"{en}  type={a.get('type')}"
+        )
+    if cmd == "status":
+        data = load_accounts()
+        print(f"\nrotation_policy: {data.get('rotation_policy')}")
+
+elif cmd == "threshold":
+    if not args:
+        print(get_threshold()); sys.exit(0)
+    print(f"threshold → {set_threshold(float(args[0]))}%")
+
+elif cmd == "meter":
+    if len(args) < 2:
+        print("usage: effi accounts meter <id> <percent>", file=sys.stderr); sys.exit(1)
+    a = set_meter(args[0], float(args[1]))
+    print(f"✓ {a['id']} usage_percent={a['usage_percent']}%")
+    # auto-select after meter update
+    r = select_account()
+    if r.get("switched"):
+        print(f"↻ switched → {r['account']['id']} ({r['reason']})")
+
+elif cmd == "select":
+    force = None
+    if args and args[0] in ("--id", "-i") and len(args) > 1:
+        force = args[1]
+    elif args and not args[0].startswith("-"):
+        force = args[0]
+    r = select_account(force_id=force)
+    if not r.get("account"):
+        print(r.get("hint") or "no account", file=sys.stderr); sys.exit(1)
+    a = r["account"]
+    env = apply_account_env(a)
+    print(f"active: {a['id']}  usage={a.get('usage_percent')}%  threshold={r['threshold']}%")
+    print(f"reason: {r['reason']}  switched={r['switched']}")
+    if env:
+        print("env:", ", ".join(f"{k}=…" for k in env))
+    else:
+        print("env: (none applied — check api_key_env / config_dir)")
+
+elif cmd == "env":
+    r = select_account()
+    a = r.get("account")
+    if not a:
+        sys.exit(1)
+    env = apply_account_env(a)
+    for k, v in env.items():
+        # safe for eval
+        print(f"export {k}={shlex.quote(v)}")
+    print(f"export EFFI_ACCOUNT_ID={shlex.quote(a['id'])}")
+
+elif cmd == "apply":
+    # same as select but only exit code + machine line
+    r = select_account()
+    a = r.get("account")
+    if not a:
+        sys.exit(2)
+    apply_account_env(a)
+    print(a["id"])
+PY
+    ;;
+  -h|--help|help)
+    sed -n '2,14p' "$0" | tr -d '#'
+    ;;
+  *)
+    echo "unknown: $CMD (try: init list status threshold meter select env)" >&2
+    exit 1
+    ;;
+esac

@@ -5,11 +5,20 @@ tasks/
 .env
 *.local.json
 config.local.*
+# never commit real account keys (use accounts.example.json only)
+config/accounts.json
+**/accounts.local.json
 
 # OS / 에디터
 .DS_Store
 .idea/
 .vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
 
 # 로컬 모델
 *.gguf

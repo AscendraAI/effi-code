@@ -1,28 +1,38 @@
-# 로컬 모델 (폴백 엔진)
+# 로컬 모델 v4 — 태스크 + 리소스 동적 추천
 
-로컬은 **쿼터 백스톱**입니다 — 주력이 아니라 안전망. 맥 RAM에 맞춰 고르세요.
-(근거: 2026-07 딥리서치, 1차 출처 Mistral·Ollama·Aider 리더보드)
+**고정 모델 금지.** `effi pick --task "…"` 가 (1) 업무 역할 (2) 현재 가용 RAM 으로 고른다.
 
-**모델은 `effi-pick`이 "현재 가용 메모리"에 맞춰 자동 선택합니다** — 총 RAM만이 아니라 *지금 앱이 쓰고 남은* 메모리 기준(컴퓨터가 안 느려지는 선). `effi local`·`effi-run`이 자동 호출.
+## 사용
 
-| 상황(가용 메모리) | 자동 선택 | 속도(16GB 실측) |
+```bash
+effi pick                         # 일반 최선
+effi pick --task "40개 번역"      # bulk → 작고 빠른 쪽 편향
+effi pick --task "좁은 버그픽스"  # implement_narrow → 더 강한 쪽(RAM 허용 시)
+effi run -t "번역" "…"
+EFFI_LOCAL_MODEL=devstral effi local   # 강제 핀(예외)
+```
+
+## 사다리 (catalog/models.json, 2026-07)
+
+| 대략 RAM | 후보 | 역할 |
 |---|---|---|
-| 여유 많음(앱 적음 / 24GB+) | `devstral` · `qwen2.5-coder:14b` | 13 tok/s |
-| 보통 | `qwen2.5-coder:7b` | 26 tok/s |
-| **앱 많음(16GB 일반)** | **`qwen2.5-coder:3b`** | **52 tok/s** ⚡ |
-| 매우 부족 | `qwen2.5-coder:1.5b` | 최속 (앱 닫기 권장) |
+| ≥20GB | `qwen3-coder:30b` | 로컬 상한 에이전트 코딩 |
+| ≥15GB | `devstral` | SWE-bench 강점 에이전트 |
+| ≥10GB | `gemma4:12b`, `deepcoder:14b` | 추론/코딩 중간 |
+| ≥6GB | `ornith:9b`, `qwen2.5-coder:7b` | 에이전트·속도 균형 |
+| ≥3GB | `qwen2.5-coder:3b` | 바쁜 16GB |
+| ≥1.5GB | `1.5b` 계열 | 최후 수단 |
 
-- 규칙: 모델 footprint ≤ min(가용 + 현재로드 − 2GB, 총RAM×60%). → 16GB에서 14B(10GB) 자동 제외.
-- 고정하려면 `EFFI_LOCAL_MODEL=devstral effi local`.
-- 다운로드 크기 ≠ 실제 RAM(KV·OS 오버헤드로 더 큼). ⛔ 80B를 2bit로 우겨넣지 말 것.
+규칙: footprint ≤ min(가용+로드 − 2GB, 총RAM×60%).
 
-## 런타임
-- 기본 **Ollama** (Anthropic API 네이티브, 라우터 연결 쉬움). 최고 처리량은 **MLX**(Ollama v0.30+ 기본 백엔드).
-- 함정: **긴 컨텍스트 prefill 느림** → 긴 문맥 폴백엔 `llama.cpp --flash-attn` 고려.
+## 2주 갱신
 
-## 로컬의 솔직한 한계
-- 일상 코딩 **~80%**(단일파일·버그·테스트)는 커버, **최난도 멀티파일/크로스레포는 못 함.**
-- **2~10배 느림.** 계획 품질 클라우드 대비 낮음(경로·셀렉터 환각).
-- 자가호스팅은 **비용절감책 아님** — 쿼터 백스톱·프라이버시용.
+```bash
+effi catalog research    # Ollama coding 검색 포함 체크리스트
+# catalog/models.json local 섹션 편집
+effi catalog bump
+```
 
-세팅: `SETUP.md` §2. 연결: `FALLBACK.md`.
+## 한계
+
+로컬은 클라우드 대체 아님. 좁은 작업·쿼터 백스톱·프라이버시. 소형+MCP 폭주 금지 → `effi local`은 MCP 차단.
