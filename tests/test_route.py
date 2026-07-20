@@ -7,7 +7,19 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-from effi_core import classify_domain, recommend, format_route, version, project_root
+from effi_core import (
+    classify_domain,
+    recommend,
+    format_route,
+    version,
+    project_root,
+    launch_plan,
+    append_task_log,
+    tasks_dir,
+)
+import tempfile
+from pathlib import Path
+import os
 
 
 class RouteTests(unittest.TestCase):
@@ -62,6 +74,30 @@ class RouteTests(unittest.TestCase):
     def test_project_root_cwd(self):
         p = project_root()
         self.assertTrue(p.exists())
+
+    def test_launch_plan_claude(self):
+        r = recommend("implement login feature")
+        plan = launch_plan(r, "implement login feature")
+        self.assertEqual(plan["provider"], "claude")
+        self.assertIn("effi", plan.get("exec_hint") or "")
+
+    def test_launch_plan_local(self):
+        r = recommend("40개 문자열 번역")
+        plan = launch_plan(r, "translate")
+        self.assertEqual(plan["provider"], "local")
+        self.assertTrue(plan.get("steps"))
+
+    def test_append_task_log(self):
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["EFFI_PROJECT"] = td
+            try:
+                p = append_task_log("t1", "TRIAGE", "hello")
+                self.assertTrue(p.exists())
+                body = p.read_text(encoding="utf-8")
+                self.assertIn("[TRIAGE]", body)
+                self.assertIn("hello", body)
+            finally:
+                os.environ.pop("EFFI_PROJECT", None)
 
 
 if __name__ == "__main__":

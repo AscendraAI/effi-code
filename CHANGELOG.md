@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.2.0 — 2026-07-20
+
+Project name remains **effi-code**.
+
+### Added
+- GitHub Actions CI (unit tests + CLI smoke)
+- `effi use "task"` — route + practical launch steps (`--exec` starts Claude cloud when primary is Claude)
+- `effi log <task> <TAG> <msg>` — append to project `tasks/<task>/log.md`
+- `CONTRIBUTING.md` — catalog update + design constraints
+
 ## 4.1.0 — 2026-07-20
 
 Project name remains **effi-code**.

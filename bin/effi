@@ -112,6 +112,8 @@ case "$MODE" in
   review) exec "$BIN/effi-review" "$@" ;;
   init) exec "$BIN/effi-init" "$@" ;;
   doctor) exec "$BIN/effi-doctor" "$@" ;;
+  use) exec "$BIN/effi-use" "$@" ;;
+  log) exec "$BIN/effi-log" "$@" ;;
   help|-h|--help)
     cat <<'EOF'
 effi — cost-aware multi-provider coding orchestrator (effi-code)
@@ -124,7 +126,8 @@ Sessions
   effi init [--force]      wire current project (tasks/ + CLAUDE.md)
 
 Routing (Claude · Codex/OpenAI · Gemini · Grok · Local)
-  effi route "task…"       best model for task (token-efficient)
+  effi route "task…"       best model for task
+  effi use "task…"         route + how to run ( --exec for claude )
   effi pick [--task "…"]   RAM+task local model
   effi run [-t hint] "…"   local mechanical worker
 
@@ -132,15 +135,16 @@ Accounts / catalog
   effi accounts …
   effi catalog …
 
-Tasks (created under project root, not toolkit install)
+Tasks (under project root)
   effi new <name> [goal]
+  effi log <name> <TAG> <msg>
   effi review -o tasks/…/workers/review
 
 Rules: ORCHESTRATION.md  Matrix: catalog/task-routing.json
 EOF
     ;;
   *)
-    echo "usage: effi [cloud|local|status|doctor|init|route|accounts|catalog|pick|run|new|review|help]" >&2
+    echo "usage: effi [cloud|local|status|doctor|init|route|use|log|accounts|catalog|pick|run|new|review|help]" >&2
     exit 1
     ;;
 esac

@@ -1,6 +1,6 @@
 # effi-code
 
-**v4 — 멀티 프로바이더·최소 비용 코딩 오케스트레이션.**  
+**v4.2 — 멀티 프로바이더·최소 비용 코딩 오케스트레이션.**  
 업무마다 **Claude · Codex(OpenAI) · Gemini · Grok · Local** 중 최적을 고르고, Claude 사용량이 임계값을 넘으면 계정을 돌리며, 2주마다 모델 카탈로그를 갱신합니다.
 
 [English](README.md) | **한국어**

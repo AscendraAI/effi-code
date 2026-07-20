@@ -1,13 +1,13 @@
 # effi-code
 
-**v4.1 (`VERSION` 4.1.0) — Multi-provider, cost-minimal coding orchestration.**  
+**v4.2 (`VERSION` 4.2.0) — Multi-provider, cost-minimal coding orchestration.**  
 Route each task to the best of **Claude · Codex (OpenAI) · Gemini · Grok · Local**, rotate Claude accounts at a usage threshold you set, and keep a biweekly model catalog honest.
 
 Project name: **effi-code** (CLI: `effi`).
 
 **English** | [한국어](README_ko.md)
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) ![Orchestration](https://img.shields.io/badge/orchestration-v4-green) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml) ![Orchestration](https://img.shields.io/badge/orchestration-v4.2-green) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
 
 > Not a heavyweight framework. Files + small CLIs + a way of working.  
 > **Right model per task. Single writer. Clean-context verify. Cache-safe main thread.**
@@ -43,8 +43,9 @@ cd /path/to/your-app
 effi init            # tasks/ + CLAUDE.md
 effi doctor
 effi new auth-rate "add rate-limit middleware + tests"
+effi use "add rate-limit middleware + tests"   # route + how to run
+effi log auth-rate DECISION "starting implement on sonnet"
 effi                 # Claude cloud (auto account select)
-effi route "landing page UI mockup"
 ```
 
 ## Routing examples
@@ -114,7 +115,8 @@ effi catalog bump
 | [`docs/domains.md`](docs/domains.md) | plan→deploy pipeline |
 | [`docs/why.md`](docs/why.md) | citations (2026-07) |
 | [`CLAUDE.md`](CLAUDE.md) | drop-in session rules |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.1.0) |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.2.0) |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | catalog updates + PR rules |
 
 ## Philosophy (evidence-backed)
 

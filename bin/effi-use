@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# effi-use — route a task, then print (or run) the practical next command
+#
+#   effi use "add rate limit middleware"
+#   effi use --json "UI mockup"
+#   effi use --exec "…"     # only for claude→effi cloud or local→prints run hint
+#                           # never auto-runs destructive tools
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+export PATH="$(cd "$(dirname "$0")" && pwd):$PATH"
+
+JSON=0; EXEC=0
+ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --json|-j) JSON=1; shift ;;
+    --exec|-x) EXEC=1; shift ;;
+    -h|--help)
+      echo "usage: effi use [--json] [--exec] \"task\""
+      exit 0 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+TEXT="${ARGS[*]:-}"
+[ -z "$TEXT" ] && { echo "usage: effi use \"task description\"" >&2; exit 1; }
+
+JSON="$JSON" EXEC="$EXEC" TEXT="$TEXT" BIN_DIR="$(cd "$(dirname "$0")" && pwd)" python3 - <<'PY'
+import os, sys, subprocess
+from effi_core import recommend, format_route, launch_plan, print_json
+
+text = os.environ["TEXT"]
+rec = recommend(text)
+plan = launch_plan(rec, task_text=text)
+out = {"route": rec, "plan": plan}
+
+if os.environ.get("JSON") == "1":
+    print_json(out)
+    sys.exit(0)
+
+print(format_route(rec))
+print()
+print("# How to run")
+for i, s in enumerate(plan.get("steps") or [], 1):
+    print(f"  {i}. {s}")
+if plan.get("warning"):
+    print(f"\n⚠️  {plan['warning']}")
+print(f"\nmain_thread_lock: {plan.get('main_thread')}")
+if plan.get("exec_hint"):
+    print(f"exec_hint: {plan['exec_hint']}")
+
+if os.environ.get("EXEC") != "1":
+    sys.exit(0)
+
+prov = plan.get("provider")
+bindir = os.environ["BIN_DIR"]
+if prov == "claude":
+    print("\n▶ --exec → effi cloud")
+    os.execv(os.path.join(bindir, "effi"), [os.path.join(bindir, "effi"), "cloud"])
+elif prov == "local":
+    print("\n▶ --exec for local is interactive; pass the prompt:")
+    print(f'   {plan.get("exec_hint")}\"<your prompt>\"')
+    sys.exit(0)
+else:
+    print(f"\n▶ --exec does not auto-start {prov} (isolated subtask).")
+    print("   Start that CLI yourself so the Claude main thread stays cache-stable.")
+    # try which
+    cmd = plan.get("exec_hint")
+    if cmd:
+        from shutil import which
+        if which(cmd):
+            print(f"   found: {which(cmd)}")
+        else:
+            print(f"   '{cmd}' not on PATH")
+    sys.exit(0)
+PY

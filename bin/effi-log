@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# effi-log — append a line to tasks/<name>/log.md in the project root
+#
+#   effi log my-feature TRIAGE "domain=implement model=claude/sonnet"
+#   effi log my-feature COMPLETE "shipped"
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+NAME="${1:-}"
+TAG="${2:-}"
+shift 2 2>/dev/null || true
+MSG="${*:-}"
+if [ -z "$NAME" ] || [ -z "$TAG" ] || [ -z "$MSG" ]; then
+  echo "usage: effi log <task-name> <TAG> <message…>" >&2
+  echo "  TAG examples: TRIAGE DECISION WORKER_CALL VERIFICATION ESCALATE COMPLETE" >&2
+  exit 1
+fi
+
+NAME="$NAME" TAG="$TAG" MSG="$MSG" python3 - <<'PY'
+import os
+from effi_core import append_task_log, project_root
+
+path = append_task_log(os.environ["NAME"], os.environ["TAG"], os.environ["MSG"])
+print(f"✓ {path}")
+print(f"  project={project_root()}")
+PY

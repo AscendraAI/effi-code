@@ -116,22 +116,43 @@ def load_config() -> dict:
 # ── Memory / local pick ──────────────────────────────────────────────
 
 def memory_stats() -> dict:
-    total = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"])) / 1024**3
-    vm = subprocess.check_output(["vm_stat"]).decode()
-    m = re.search(r"page size of (\d+) bytes", vm)
-    page = int(m.group(1)) if m else 16384
+    """Best-effort free/total RAM. macOS via sysctl/vm_stat; Linux via /proc."""
+    # macOS
+    try:
+        total = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], stderr=subprocess.DEVNULL)) / 1024**3
+        vm = subprocess.check_output(["vm_stat"], stderr=subprocess.DEVNULL).decode()
+        m = re.search(r"page size of (\d+) bytes", vm)
+        page = int(m.group(1)) if m else 16384
 
-    def pg(name: str) -> int:
-        mm = re.search(re.escape(name) + r":\s+(\d+)", vm)
-        return int(mm.group(1)) if mm else 0
+        def pg(name: str) -> int:
+            mm = re.search(re.escape(name) + r":\s+(\d+)", vm)
+            return int(mm.group(1)) if mm else 0
 
-    avail = (
-        pg("Pages free")
-        + pg("Pages inactive")
-        + pg("Pages speculative")
-        + pg("Pages purgeable")
-    ) * page / 1024**3
-    return {"total_gb": total, "avail_gb": avail}
+        avail = (
+            pg("Pages free")
+            + pg("Pages inactive")
+            + pg("Pages speculative")
+            + pg("Pages purgeable")
+        ) * page / 1024**3
+        return {"total_gb": total, "avail_gb": avail}
+    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+        pass
+
+    # Linux
+    try:
+        meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
+        def kB(key: str) -> float:
+            mm = re.search(rf"^{key}:\s+(\d+)", meminfo, re.M)
+            return (int(mm.group(1)) / 1024 / 1024) if mm else 0.0
+        total = kB("MemTotal")
+        avail = kB("MemAvailable") or (kB("MemFree") + kB("Buffers") + kB("Cached"))
+        if total > 0:
+            return {"total_gb": total, "avail_gb": avail}
+    except OSError:
+        pass
+
+    # unknown platform — conservative tiny budget
+    return {"total_gb": 8.0, "avail_gb": 2.0}
 
 
 def ollama_loaded_gb(url: str) -> float:
@@ -841,6 +862,109 @@ def doctor() -> dict:
 
 
 # ── CLI helpers ──────────────────────────────────────────────────────
+
+def launch_plan(rec: dict, task_text: str = "") -> dict:
+    """How to actually start work for a route recommendation.
+
+    Keeps main-thread cache discipline: Claude lead stays default for coding
+    sessions; other providers are for isolated subtasks / bulk.
+    """
+    prov = rec.get("primary_provider")
+    model = rec.get("primary_model")
+    domain = rec.get("domain")
+    steps = []
+    env = {}
+    exec_cmd = None
+    warning = None
+
+    if prov == "local":
+        hint = task_text or domain or "bulk"
+        hint_q = hint.replace('"', "'")
+        exec_cmd = f'effi run -t "{hint_q}" '
+        steps = [
+            f"Local model: {model} (RAM-aware pick may differ at runtime)",
+            f'Run: effi run -t "{hint_q}" "<your bulk prompt>"',
+            "Verify output before applying to the repo",
+            "Main Claude session stays open for orchestration (cache)",
+        ]
+        warning = "Confirm with user before bulk local runs (ORCHESTRATION rule)"
+    elif prov == "claude":
+        exec_cmd = "effi cloud"
+        steps = [
+            f"Primary: Claude · {model}",
+            "Start main session: effi   # or: effi cloud",
+            f"Log TRIAGE: domain={domain} model=claude/{model}",
+            "Keep this thread for writes (single-writer)",
+        ]
+        if rec.get("review") and rec["review"] != "none":
+            steps.append("After edits: effi review -o tasks/<job>/workers/review")
+    elif prov == "openai":
+        exec_cmd = "codex"
+        steps = [
+            f"Isolated subtask on OpenAI/Codex · {model}",
+            "Prefer: keep main session on Claude; run Codex in another pane for this slice",
+            f"If using Codex CLI: codex  (set model to {model} in Codex config if needed)",
+            "Return summary + file paths only to the Claude lead",
+        ]
+        warning = "Do not move the main Claude conversation mid-session (cache)"
+    elif prov == "gemini":
+        exec_cmd = "gemini"
+        steps = [
+            f"Isolated subtask on Gemini · {model}",
+            "Use for design/multimodal/research slices",
+            "Save artifacts under tasks/<job>/workers/<role>/",
+            "Summarize back to Claude lead",
+        ]
+        warning = "Optional CLI; API/AI Studio also fine"
+    elif prov == "grok":
+        exec_cmd = "grok"
+        steps = [
+            f"Isolated subtask on Grok · {model}",
+            "Good for realtime research (enable search tools) or value coding",
+            "Return paths + short summary to Claude lead",
+        ]
+    else:
+        steps = [f"Unknown provider {prov} — use effi route --json for details"]
+
+    # always suggest alternates briefly
+    alts = rec.get("alternates") or []
+    if alts:
+        steps.append(
+            "Alternates: "
+            + ", ".join(f"{a.get('provider')}/{a.get('model')}" for a in alts[:3])
+        )
+
+    return {
+        "provider": prov,
+        "model": model,
+        "domain": domain,
+        "exec_hint": exec_cmd,
+        "steps": steps,
+        "warning": warning,
+        "main_thread": rec.get("main_thread_lock", "claude"),
+        "env": env,
+    }
+
+
+def append_task_log(
+    task_name: str,
+    tag: str,
+    message: str,
+    project: Optional[Path] = None,
+) -> Path:
+    """Append one line to tasks/<name>/log.md (creates file if missing)."""
+    proj = project or project_root()
+    log_path = tasks_dir(proj) / task_name / "log.md"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    tag = tag.upper().replace(" ", "_")
+    line = f"[{now}] [{tag}] {message}\n"
+    if not log_path.exists():
+        log_path.write_text(f"# log — {task_name}\n\n<!-- append-only -->\n\n", encoding="utf-8")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(line)
+    return log_path
+
 
 def print_json(data: Any) -> None:
     json.dump(data, sys.stdout, indent=2, ensure_ascii=False)
