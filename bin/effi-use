@@ -30,7 +30,8 @@ import os, sys, subprocess
 from effi_core import recommend, format_route, launch_plan, print_json
 
 text = os.environ["TEXT"]
-rec = recommend(text)
+# ask to switch mode when task importance mismatches current pin
+rec = recommend(text, adjust_mode=os.environ.get("JSON") != "1", interactive=True)
 plan = launch_plan(rec, task_text=text)
 out = {"route": rec, "plan": plan}
 

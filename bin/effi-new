@@ -34,12 +34,14 @@ out.mkdir(parents=True)
 (out / "workers" / "review").mkdir(parents=True)
 
 route_text = goal or name
-rec = recommend(route_text)
+# project-local mode adjust by task importance (TTY)
+rec = recommend(route_text, adjust_mode=True, interactive=True)
 primary = f"{rec['primary_provider']}/{rec['primary_model']}"
 grade = rec.get("grade", "M")
 domain = rec.get("domain", "implement")
 review = rec.get("review", "clean_context")
 tier = rec.get("start_tier", "mid")
+mode = rec.get("mode", "cruise")
 today = datetime.now().strftime("%Y-%m-%d")
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -54,14 +56,21 @@ if goal:
     text = text.replace("<!-- 한 문장. 무엇을 완료로 볼 것인가. -->", goal, 1)
 
 (out / "task.md").write_text(text, encoding="utf-8")
+imp = rec.get("importance") or (rec.get("mode_adjust") or {}).get("importance") or {}
+imp_line = ""
+if imp:
+    imp_line = (
+        f"[{now}] [MODE] importance={imp.get('band')} suggest={imp.get('suggested_mode')} "
+        f"active={mode} ({imp.get('reason')})\n"
+    )
 (out / "log.md").write_text(
     f"""# log — {name}
 
 <!-- append-only -->
 
 [{now}] [DECISION] task folder created (effi-new) project={proj}
-[{now}] [TRIAGE] domain={domain} grade={grade} model={primary} review={review}
-""",
+[{now}] [TRIAGE] domain={domain} grade={grade} model={primary} review={review} mode={mode}
+{imp_line}""",
     encoding="utf-8",
 )
 brief = (Path(toolkit) / "templates" / "review.md").read_text(encoding="utf-8")
@@ -69,6 +78,6 @@ brief = (Path(toolkit) / "templates" / "review.md").read_text(encoding="utf-8")
 
 print(f"✓ {out}")
 print(f"  project={proj}")
-print(f"  domain={domain}  grade={grade}  primary={primary}")
+print(f"  domain={domain}  grade={grade}  primary={primary}  mode={mode}")
 print("  task.md  log.md  workers/review/brief.md")
 PY

@@ -1,7 +1,7 @@
 # effi-code
 
-**v4.3 (`VERSION` 4.3.0) — Multi-provider orchestration with 3 user modes.**  
-🚀 **Apex** · 🛣 **Cruise** · ☕ **Sip** — pick max performance, balanced thrift, or minimum cost anytime.
+**v4.3 (`VERSION` 4.3.1) — Multi-provider orchestration with 3 user modes.**  
+🚀 **Apex** · 🛣 **Cruise** · ☕ **Sip** — per-project pins + ask when task importance mismatches.
 
 Project name: **effi-code** (CLI: `effi`).
 
@@ -57,9 +57,10 @@ effi                 # asks mode if unset; then Claude cloud
 | ☕ **Sip** | Min cost | Local/cheap first; Sonnet ceiling for hard bits |
 
 ```bash
-effi mode set apex    # 1 / max / 풀파워
-effi mode set cruise  # 2 / balance
-effi mode set sip     # 3 / thrift / 알뜰
+effi mode set apex              # pin this project (.effi/mode)
+effi mode set sip --global      # all projects default
+effi mode check "security audit"  # importance → offer switch
+# effi route / use / new also prompt when mode is too weak or too heavy for the task
 ```
 
 

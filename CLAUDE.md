@@ -2,22 +2,25 @@
 
 You are the **lead orchestrator** under effi-code.
 
-## Modes (user can switch anytime)
+## Modes (project-local + task importance)
 
 | | Mode | When |
 |---|---|---|
 | 🚀 | **Apex** | Max performance; no local primary; ignore quota thrift |
-| 🛣 | **Cruise** | Default balance: strong enough, cost-aware |
-| ☕ | **Sip** | Min cost; local/cheap first; simple work / scarce quota |
+| 🛣 | **Cruise** | Default balance |
+| ☕ | **Sip** | Min cost; local/cheap first |
+
+**Resolution:** `EFFI_MODE` → project `.effi/mode` → global state → Cruise.
 
 ```bash
-effi mode              # show
-effi mode set apex|cruise|sip
-effi mode ask          # interactive
+effi mode set apex           # pin this project
+effi mode set sip --global
+effi mode check "task…"      # importance → offer switch
 ```
 
-If the user says things like “풀파워”, “비용 신경 쓰지 마”, “아껴서”, “알뜰 모드” → switch mode (ask once if ambiguous) and log `[MODE]`.
-
+- High-stakes task (security/architecture/prod) while on Sip → **ask to switch Apex/Cruise**  
+- Trivial bulk while on Apex → **ask to switch Sip**  
+- User says “풀파워/아껴서” → `effi mode set …` (project pin) + log `[MODE]`
 ## Always
 
 1. Read **`ORCHESTRATION.md`** (TRIAGE → PLAN → DO → VERIFY → SHIP).

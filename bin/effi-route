@@ -8,15 +8,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
 
-JSON=0; LOCAL=0; COMPACT=0
+JSON=0; LOCAL=0; COMPACT=0; NOADJ=0
 ARGS=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --json|-j) JSON=1; shift ;;
     --local) LOCAL=1; shift ;;
     --compact|-c) COMPACT=1; shift ;;
+    --no-adjust) NOADJ=1; shift ;;
     -h|--help)
-      echo "사용법: effi-route [--json] [--local] [--compact] \"task\""
+      echo "사용법: effi-route [--json] [--local] [--compact] [--no-adjust] \"task\""
       exit 0 ;;
     *) ARGS+=("$1"); shift ;;
   esac
@@ -28,11 +29,22 @@ if [ -z "$TEXT" ]; then
   fi
 fi
 
-JSON="$JSON" LOCAL="$LOCAL" COMPACT="$COMPACT" TEXT="$TEXT" python3 - <<'PY'
+# interactive mode-adjust unless compact/json/no-adjust (CI-safe)
+JSON="$JSON" LOCAL="$LOCAL" COMPACT="$COMPACT" NOADJ="$NOADJ" TEXT="$TEXT" python3 - <<'PY'
 import os, sys
 from effi_core import recommend, format_route, print_json
 
-rec = recommend(os.environ["TEXT"], prefer_local=os.environ.get("LOCAL") == "1")
+adjust = (
+    os.environ.get("NOADJ") != "1"
+    and os.environ.get("JSON") != "1"
+    and os.environ.get("COMPACT") != "1"
+)
+rec = recommend(
+    os.environ["TEXT"],
+    prefer_local=os.environ.get("LOCAL") == "1",
+    adjust_mode=adjust,
+    interactive=True,
+)
 if os.environ.get("JSON") == "1":
     print_json(rec)
 elif os.environ.get("COMPACT") == "1":
@@ -44,6 +56,6 @@ else:
     print(
         f"[TRIAGE] domain={rec['domain']} grade={rec['grade']} "
         f"model={rec['primary_provider']}/{rec['primary_model']} "
-        f"review={rec['review']}"
+        f"review={rec['review']} mode={rec.get('mode')}"
     )
 PY

@@ -133,6 +133,35 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(r["primary_provider"], "claude")
         self.assertIn("sonnet", r["primary_model"])
 
+    def test_importance_high_security(self):
+        from effi_core import assess_task_importance, mode_fit
+        imp = assess_task_importance("OWASP security audit of auth")
+        self.assertEqual(imp["band"], "high")
+        self.assertEqual(imp["suggested_mode"], "apex")
+        fit = mode_fit("sip", "apex", "high")
+        self.assertFalse(fit["ok"])
+        self.assertEqual(fit["mismatch"], "underpowered")
+
+    def test_importance_low_bulk(self):
+        from effi_core import assess_task_importance, mode_fit
+        imp = assess_task_importance("40 UI strings translate")
+        self.assertEqual(imp["band"], "low")
+        self.assertEqual(imp["suggested_mode"], "sip")
+        fit = mode_fit("apex", "sip", "low")
+        self.assertEqual(fit["mismatch"], "overpowered")
+
+    def test_project_mode_pin(self):
+        from effi_core import write_project_mode, read_project_mode, set_mode, get_mode
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["EFFI_PROJECT"] = td
+            try:
+                set_mode("apex", scope="project")
+                self.assertEqual(read_project_mode(), "apex")
+                self.assertEqual(get_mode()["id"], "apex")
+                self.assertEqual(get_mode()["source"], "project")
+            finally:
+                os.environ.pop("EFFI_PROJECT", None)
+
 
 if __name__ == "__main__":
     unittest.main()

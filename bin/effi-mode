@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# effi-mode — Apex / Cruise / Sip orchestration mode
+# effi-mode — Apex / Cruise / Sip (project-local by default)
 #
-#   effi mode              # show current + menu
+#   effi mode                 # show current + source (env|project|global|default)
 #   effi mode list
-#   effi mode set apex     # or 1 / max / 풀파워
-#   effi mode set cruise   # or 2
-#   effi mode set sip      # or 3 / thrift / 알뜰
-#   effi mode ask          # interactive picker (first-run style)
+#   effi mode set apex        # pin to *this project* (.effi/mode)
+#   effi mode set sip --global
+#   effi mode set cruise --both
+#   effi mode ask             # interactive (saves to project)
+#   effi mode check "task…"   # importance → suggest switch (interactive)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
@@ -14,76 +15,119 @@ export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
 CMD="${1:-show}"
 [ "$#" -gt 0 ] && shift || true
 
+# parse trailing scope flags for set
+SCOPE="project"
+ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --global|--user) SCOPE="global"; shift ;;
+    --project|--local) SCOPE="project"; shift ;;
+    --both) SCOPE="both"; shift ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+
 case "$CMD" in
   show|status|"")
     python3 - <<'PY'
-from effi_core import get_mode, mode_is_set, list_modes, print_mode_menu
+from effi_core import get_mode, mode_is_set, mode_source, project_mode_path, project_root, print_mode_menu
 m = get_mode()
-src = "set" if mode_is_set() else "default (not pinned — run: effi mode ask)"
-print(f"{m.get('emoji','')} {m['name']}  [{m['id']}]  · {src}")
+src = mode_source()
+print(f"{m.get('emoji','')} {m['name']}  [{m['id']}]  · source={src}")
 print(f"  {m.get('tagline')}")
-print(f"  {m.get('banner')}")
+print(f"  project: {project_root()}")
+print(f"  project pin file: {project_mode_path()}")
+if src == "default":
+    print("  (not pinned — will ask on first cloud session / mode ask)")
 print()
 print_mode_menu()
-print(f"active → {m['id']}")
+print(f"active → {m['id']} @{src}")
+print("set project: effi mode set apex")
+print("set global:  effi mode set apex --global")
 PY
     ;;
   list)
     python3 - <<'PY'
-from effi_core import list_modes
+from effi_core import list_modes, mode_source
+print(f"source={mode_source()}")
 for m in list_modes():
     mark = "*" if m.get("active") else " "
     print(f"{mark} [{m['number']}] {m.get('emoji','')} {m['name']:7}  {m['id']:7}  {m.get('tagline')}")
 PY
     ;;
   set)
-    TOKEN="${1:-}"
-    [ -z "$TOKEN" ] && { echo "usage: effi mode set <apex|cruise|sip|1|2|3>" >&2; exit 1; }
-    TOKEN="$TOKEN" python3 - <<'PY'
+    TOKEN="${ARGS[0]:-}"
+    [ -z "$TOKEN" ] && { echo "usage: effi mode set <apex|cruise|sip> [--project|--global|--both]" >&2; exit 1; }
+    TOKEN="$TOKEN" SCOPE="$SCOPE" python3 - <<'PY'
 import os, sys
 from effi_core import set_mode
 try:
-    m = set_mode(os.environ["TOKEN"])
+    m = set_mode(os.environ["TOKEN"], scope=os.environ.get("SCOPE") or "project")
 except KeyError as e:
     print(e, file=sys.stderr); sys.exit(1)
-print(f"✓ mode → {m.get('emoji','')} {m['name']} ({m['id']})")
+print(f"✓ mode → {m.get('emoji','')} {m['name']} ({m['id']})  scope={m.get('scope')}")
+for p in m.get("saved_to") or []:
+    print(f"  saved: {p}")
 print(f"  {m.get('banner')}")
-print("  switch anytime: effi mode set apex|cruise|sip")
 PY
     ;;
   ask|pick|select)
-    python3 - <<'PY'
-from effi_core import ensure_mode, mode_is_set
-# force ask even if set? only if --force not passed; ask always re-prompts
-import sys
-# clear sticky for re-ask: user explicitly ran ask
-from effi_core import load_state, save_state, set_mode, print_mode_menu, resolve_mode_id
-print_mode_menu()
+    SCOPE="$SCOPE" python3 - <<'PY'
+import os
+from effi_core import set_mode, print_mode_menu, project_root
+print_mode_menu(context=f"project={project_root()}")
 try:
-    import sys as _s
-    _s.stderr.write("mode> ")
-    _s.stderr.flush()
-    line = _s.stdin.readline()
+    import sys
+    sys.stderr.write("mode> ")
+    sys.stderr.flush()
+    line = sys.stdin.readline()
 except EOFError:
     line = ""
 choice = (line or "").strip() or "cruise"
+scope = os.environ.get("SCOPE") or "project"
 try:
-    m = set_mode(choice)
+    m = set_mode(choice, scope=scope)
 except KeyError as e:
-    print(e); m = set_mode("cruise")
-print(f"✓ mode → {m.get('emoji','')} {m['name']} ({m['id']})")
-print(f"  {m.get('banner')}")
+    print(e); m = set_mode("cruise", scope=scope)
+print(f"✓ mode → {m.get('emoji','')} {m['name']} ({m['id']})  scope={scope}")
+for p in m.get("saved_to") or []:
+    print(f"  saved: {p}")
+PY
+    ;;
+  check)
+    TEXT="${ARGS[*]:-}"
+    [ -z "$TEXT" ] && { echo "usage: effi mode check \"task description\"" >&2; exit 1; }
+    TEXT="$TEXT" python3 - <<'PY'
+import os, json
+from effi_core import maybe_adjust_mode_for_task, get_mode, print_json
+r = maybe_adjust_mode_for_task(os.environ["TEXT"], interactive=True, scope="project")
+m = r["mode"]
+imp = r["importance"]
+print(f"importance: {imp['band']}  domain={imp['domain']} grade={imp['grade']}")
+print(f"suggested:  {imp['suggested_mode']}  ({imp['reason']})")
+print(f"mode now:   {m.get('emoji')} {m['name']} ({m['id']}) source={m.get('source')}")
+print(f"changed:    {r.get('changed')}  skipped={r.get('skipped')}")
+print(f"fit:        {r['fit'].get('message')}")
 PY
     ;;
   -h|--help|help)
-    sed -n '2,12p' "$0" | tr -d '#'
+    cat <<'EOF'
+effi mode — Apex / Cruise / Sip
+
+  effi mode                 show + menu
+  effi mode list
+  effi mode set <name> [--project|--global|--both]
+  effi mode ask [--global]
+  effi mode check "task…"   assess importance, offer switch
+
+Resolution order: EFFI_MODE env → project .effi/mode → global state → cruise
+EOF
     ;;
   *)
-    # bare token: treat as set
     if [[ "$CMD" =~ ^(apex|cruise|sip|1|2|3|max|min|thrift|balance)$ ]]; then
-      exec "$0" set "$CMD"
+      exec "$0" set "$CMD" ${SCOPE:+--$SCOPE}
     fi
-    echo "usage: effi mode [show|list|set <name>|ask]" >&2
+    echo "usage: effi mode [show|list|set|ask|check]" >&2
     exit 1
     ;;
 esac

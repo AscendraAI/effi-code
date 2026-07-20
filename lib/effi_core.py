@@ -91,9 +91,59 @@ def load_modes_catalog() -> dict:
 
 
 # ── Orchestration modes (Apex / Cruise / Sip) ───────────────────────
+# Resolution: EFFI_MODE → project .effi/mode → global state → default cruise
 
 def _modes_map() -> dict:
     return load_modes_catalog().get("modes") or {}
+
+
+def project_effi_dir(project: Optional[Path] = None) -> Path:
+    return (project or project_root()) / ".effi"
+
+
+def project_mode_path(project: Optional[Path] = None) -> Path:
+    return project_effi_dir(project) / "mode"
+
+
+def read_project_mode(project: Optional[Path] = None) -> Optional[str]:
+    path = project_mode_path(project)
+    if not path.is_file():
+        # legacy single-file marker
+        legacy = (project or project_root()) / ".effi-mode"
+        if legacy.is_file():
+            path = legacy
+        else:
+            return None
+    try:
+        raw = path.read_text(encoding="utf-8").strip().splitlines()
+        if not raw:
+            return None
+        # allow "apex" or "mode: apex"
+        line = raw[0].strip()
+        if ":" in line and not line.startswith("apex") and line.split(":")[0].lower() in (
+            "mode",
+            "id",
+        ):
+            line = line.split(":", 1)[1].strip()
+        return resolve_mode_id(line)
+    except (OSError, KeyError, ValueError):
+        return None
+
+
+def write_project_mode(mode_id: str, project: Optional[Path] = None) -> Path:
+    proj = project or project_root()
+    d = project_effi_dir(proj)
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "mode"
+    path.write_text(
+        f"{mode_id}\n# set by effi mode — project-local\n# global: effi mode set {mode_id} --global\n",
+        encoding="utf-8",
+    )
+    # gitignore helper so mode pin is optional to commit
+    gi = d / ".gitignore"
+    if not gi.exists():
+        gi.write_text("# un-ignore 'mode' if the team should share the default\n# mode\n", encoding="utf-8")
+    return path
 
 
 def resolve_mode_id(token: str) -> str:
@@ -118,55 +168,97 @@ def resolve_mode_id(token: str) -> str:
     )
 
 
+def mode_source() -> str:
+    """Where the active mode comes from: env|project|global|default."""
+    if os.environ.get("EFFI_MODE"):
+        return "env"
+    if read_project_mode():
+        return "project"
+    st = load_state()
+    if st.get("mode"):
+        return "global"
+    return "default"
+
+
 def get_mode(mode_id: Optional[str] = None) -> dict:
-    """Return full mode dict. Resolves EFFI_MODE → state → default."""
+    """Return full mode dict.
+
+    Order: explicit mode_id → EFFI_MODE → project .effi/mode → global state → default.
+    """
     modes_cat = load_modes_catalog()
     modes = modes_cat.get("modes") or {}
     mid = mode_id
+    source = "explicit" if mid else None
     if not mid:
-        mid = os.environ.get("EFFI_MODE") or None
+        env = os.environ.get("EFFI_MODE")
+        if env:
+            mid = env
+            source = "env"
+    if not mid:
+        pm = read_project_mode()
+        if pm:
+            mid = pm
+            source = "project"
     if not mid:
         st = load_state()
         mid = st.get("mode") or None
+        if mid:
+            source = "global"
     if not mid:
         mid = modes_cat.get("default") or "cruise"
+        source = "default"
     if mid not in modes:
         try:
             mid = resolve_mode_id(str(mid))
         except KeyError:
             mid = "cruise"
+            source = "default"
     m = dict(modes[mid])
     m["id"] = mid
+    m["source"] = source or mode_source()
     return m
 
 
-def set_mode(token: str) -> dict:
+def set_mode(token: str, scope: str = "project") -> dict:
+    """Pin mode. scope: project (default) | global | both | env (print only)."""
     mid = resolve_mode_id(token)
-    st = load_state()
-    prev = st.get("mode")
-    st["mode"] = mid
-    st["mode_set_at"] = datetime.now().isoformat(timespec="minutes")
-    st.setdefault("mode_history", []).append(
-        {
-            "at": st["mode_set_at"],
-            "from": prev,
-            "to": mid,
-        }
-    )
-    st["mode_history"] = st["mode_history"][-30:]
-    save_state(st)
-    # also mirror into config for visibility
-    cfg = load_config()
-    cfg["mode"] = mid
-    _save_json(DEFAULT_CONFIG, cfg)
-    return get_mode(mid)
+    scope = (scope or "project").lower()
+    prev = get_mode().get("id")
+    now = datetime.now().isoformat(timespec="minutes")
+    paths = []
+
+    if scope in ("project", "both", "local"):
+        p = write_project_mode(mid)
+        paths.append(str(p))
+
+    if scope in ("global", "both", "user"):
+        st = load_state()
+        st["mode"] = mid
+        st["mode_set_at"] = now
+        st.setdefault("mode_history", []).append(
+            {"at": now, "from": prev, "to": mid, "scope": "global"}
+        )
+        st["mode_history"] = st["mode_history"][-30:]
+        save_state(st)
+        cfg = load_config()
+        cfg["mode"] = mid
+        _save_json(DEFAULT_CONFIG, cfg)
+        paths.append(str(DEFAULT_STATE))
+
+    if scope == "env":
+        # caller exports; we only return
+        pass
+
+    m = get_mode(mid)
+    m["saved_to"] = paths
+    m["scope"] = scope
+    m["previous"] = prev
+    return m
 
 
 def mode_is_set() -> bool:
-    if os.environ.get("EFFI_MODE"):
-        return True
-    st = load_state()
-    return bool(st.get("mode"))
+    """True if user (or project/env) pinned a mode — not bare default."""
+    return mode_source() != "default"
 
 
 def list_modes() -> list[dict]:
@@ -183,26 +275,33 @@ def list_modes() -> list[dict]:
     return out
 
 
-def print_mode_menu(stream=None) -> None:
+def print_mode_menu(stream=None, context: Optional[str] = None) -> None:
     stream = stream or sys.stderr
-    cur = get_mode().get("id") if mode_is_set() else None
-    stream.write("\n effi-code · pick your orchestration mode\n")
+    cur = get_mode()
+    stream.write("\n effi-code · pick orchestration mode\n")
+    if context:
+        stream.write(f"  context: {context}\n")
+    stream.write(
+        f"  current: {cur.get('emoji','')} {cur.get('name')} "
+        f"({cur.get('id')}) · source={cur.get('source')}\n"
+    )
     stream.write(" ─────────────────────────────────────\n")
     for m in list_modes():
-        mark = "→" if m["id"] == cur else " "
+        mark = "→" if m["id"] == cur.get("id") else " "
         stream.write(
             f"  {mark} [{m['number']}] {m.get('emoji','')} {m['name']:7}  — {m.get('tagline')}\n"
         )
     stream.write(" ─────────────────────────────────────\n")
-    stream.write("  choose 1/2/3 or apex/cruise/sip  (Enter = Cruise)\n\n")
+    stream.write("  1/2/3 or apex/cruise/sip   Enter=keep current / Cruise\n")
+    stream.write("  scope: project default · add --global when setting via CLI\n\n")
 
 
-def ensure_mode(interactive: bool = True) -> dict:
-    """Return active mode; if unset and interactive TTY, ask once."""
+def ensure_mode(interactive: bool = True, scope: str = "project") -> dict:
+    """Return active mode; if unset and interactive TTY, ask and pin to project."""
     if mode_is_set():
         return get_mode()
     if interactive and sys.stdin.isatty() and sys.stderr.isatty():
-        print_mode_menu()
+        print_mode_menu(context="first run for this environment")
         try:
             sys.stderr.write("mode> ")
             sys.stderr.flush()
@@ -211,12 +310,184 @@ def ensure_mode(interactive: bool = True) -> dict:
             line = ""
         choice = (line or "").strip() or "cruise"
         try:
-            return set_mode(choice)
+            return set_mode(choice, scope=scope)
         except KeyError as e:
             sys.stderr.write(f"  ! {e} — defaulting to Cruise\n")
-            return set_mode("cruise")
-    # non-interactive: Cruise default, do not persist unless asked
+            return set_mode("cruise", scope=scope)
     return get_mode("cruise")
+
+
+# Importance bands for task → suggested mode
+_HIGH_DOMAINS = {
+    "security",
+    "architecture",
+    "plan",
+    "implement_hard",
+    "orchestrate",
+}
+_LOW_DOMAINS = {"bulk", "docs"}
+
+
+def assess_task_importance(text: str) -> dict:
+    """Classify task importance and recommend a mode."""
+    cls = classify_domain(text)
+    domain = cls.get("domain") or "implement"
+    grade = cls.get("grade") or "M"
+    # keyword boosts
+    t = (text or "").lower()
+    critical = bool(
+        re.search(
+            r"production|프로덕션|긴급|critical|outage|장애|보안|security|launch|출시",
+            t,
+        )
+    )
+    trivial = bool(
+        re.search(
+            r"번역|translate|docstring|typo|주석|rename|포맷|format only|간단",
+            t,
+        )
+    )
+
+    if critical or domain in _HIGH_DOMAINS or grade in ("L", "XL"):
+        band = "high"
+        suggested = "apex"
+        reason = f"high stakes · domain={domain} grade={grade}"
+    elif trivial or domain in _LOW_DOMAINS or grade == "S":
+        band = "low"
+        suggested = "sip"
+        reason = f"low stakes / mechanical · domain={domain} grade={grade}"
+    else:
+        band = "medium"
+        suggested = "cruise"
+        reason = f"normal feature work · domain={domain} grade={grade}"
+
+    if critical and band != "high":
+        band, suggested, reason = "high", "apex", "critical keywords"
+
+    return {
+        "band": band,
+        "suggested_mode": suggested,
+        "reason": reason,
+        "domain": domain,
+        "grade": grade,
+        "label": cls.get("label"),
+        "confidence": cls.get("confidence"),
+    }
+
+
+def mode_fit(current_id: str, suggested_id: str, band: str) -> dict:
+    """Whether current mode is OK for this importance band."""
+    # ranking: sip=0, cruise=1, apex=2
+    rank = {"sip": 0, "cruise": 1, "apex": 2}
+    cur_r = rank.get(current_id, 1)
+    sug_r = rank.get(suggested_id, 1)
+    # underrun: mode too weak for task
+    if cur_r < sug_r:
+        return {
+            "ok": False,
+            "mismatch": "underpowered",
+            "message": f"task is {band} importance but mode is {current_id} (suggest {suggested_id})",
+        }
+    # overrun: apex on trivial bulk — optional thrift prompt
+    if band == "low" and current_id == "apex":
+        return {
+            "ok": False,
+            "mismatch": "overpowered",
+            "message": f"task is low stakes but mode is Apex (suggest Sip to save cost)",
+        }
+    return {"ok": True, "mismatch": None, "message": "mode fits task"}
+
+
+def maybe_adjust_mode_for_task(
+    text: str,
+    interactive: bool = True,
+    auto_apply: bool = False,
+    scope: str = "project",
+) -> dict:
+    """Assess task importance; if mode mismatches, ask (or auto) to switch.
+
+    Returns {importance, current, suggested, changed, mode, fit}.
+    """
+    imp = assess_task_importance(text)
+    current = get_mode()
+    suggested_id = imp["suggested_mode"]
+    fit = mode_fit(current["id"], suggested_id, imp["band"])
+    result = {
+        "importance": imp,
+        "current": current,
+        "suggested": get_mode(suggested_id),
+        "fit": fit,
+        "changed": False,
+        "mode": current,
+        "skipped": False,
+    }
+
+    if fit.get("ok"):
+        return result
+
+    # mismatch
+    if not interactive or not (sys.stdin.isatty() and sys.stderr.isatty()):
+        if auto_apply:
+            m = set_mode(suggested_id, scope=scope)
+            result["changed"] = True
+            result["mode"] = m
+        else:
+            result["skipped"] = True
+        return result
+
+    # interactive prompt
+    sug = result["suggested"]
+    sys.stderr.write("\n")
+    sys.stderr.write(" ⚡ mode check for this task\n")
+    sys.stderr.write(f"    task: {(text or '')[:80]}\n")
+    sys.stderr.write(
+        f"    importance: {imp['band'].upper()} · {imp['reason']}\n"
+    )
+    sys.stderr.write(
+        f"    current:  {current.get('emoji')} {current.get('name')} ({current['id']}) "
+        f"[{current.get('source')}]\n"
+    )
+    sys.stderr.write(
+        f"    suggested:{sug.get('emoji')} {sug.get('name')} ({sug['id']})\n"
+    )
+    sys.stderr.write(f"    why: {fit.get('message')}\n")
+    if fit.get("mismatch") == "underpowered":
+        sys.stderr.write(
+            "    → Switch for better quality? [Y=switch / n=keep / 1|2|3=pick] "
+        )
+    else:
+        sys.stderr.write(
+            "    → Switch to save cost? [Y=switch / n=keep / 1|2|3=pick] "
+        )
+    sys.stderr.flush()
+    try:
+        line = sys.stdin.readline()
+    except EOFError:
+        line = ""
+    ans = (line or "").strip().lower()
+
+    if ans in ("", "y", "yes", "ㅛ"):
+        m = set_mode(suggested_id, scope=scope)
+        result["changed"] = True
+        result["mode"] = m
+        sys.stderr.write(
+            f"  ✓ mode → {m.get('emoji')} {m['name']} (project pin)\n\n"
+        )
+    elif ans in ("n", "no", "keep", "ㅜ"):
+        result["skipped"] = True
+        sys.stderr.write("  · keeping current mode\n\n")
+    else:
+        try:
+            m = set_mode(ans, scope=scope)
+            result["changed"] = True
+            result["mode"] = m
+            sys.stderr.write(
+                f"  ✓ mode → {m.get('emoji')} {m['name']}\n\n"
+            )
+        except (KeyError, ValueError) as e:
+            sys.stderr.write(f"  ! {e} — keeping current\n\n")
+            result["skipped"] = True
+    return result
 
 
 def apply_mode_policy(rec: dict, mode: Optional[dict] = None, cfg: Optional[dict] = None) -> dict:
@@ -642,12 +913,19 @@ def recommend(
     prefer_local: bool = False,
     cfg: Optional[dict] = None,
     mode: Optional[str] = None,
+    adjust_mode: bool = False,
+    interactive: bool = True,
 ) -> dict:
     cfg = cfg or load_config()
     catalog = load_catalog()
     routing = load_routing()
     cls = classify_domain(text)
     d = cls["domain_spec"]
+    mode_adjust = None
+    if adjust_mode and not mode:
+        mode_adjust = maybe_adjust_mode_for_task(
+            text, interactive=interactive, scope="project"
+        )
     mode_obj = get_mode(mode) if mode else get_mode()
 
     primary = dict(d.get("primary") or {})
@@ -728,6 +1006,17 @@ def recommend(
     out["rules"] = d.get("rules") or []
     # Mode policy last (Apex / Cruise / Sip)
     out = apply_mode_policy(out, mode=mode_obj, cfg=cfg)
+    out["mode_source"] = mode_obj.get("source")
+    if mode_adjust:
+        out["mode_adjust"] = {
+            "changed": mode_adjust.get("changed"),
+            "importance": mode_adjust.get("importance"),
+            "fit": mode_adjust.get("fit"),
+            "skipped": mode_adjust.get("skipped"),
+        }
+    else:
+        imp = assess_task_importance(text)
+        out["importance"] = imp
     return out
 
 
@@ -735,12 +1024,22 @@ def format_route(rec: dict, compact: bool = False) -> str:
     lines = []
     mode_bit = ""
     if rec.get("mode"):
-        mode_bit = f"  mode={rec.get('mode_emoji','')}{rec.get('mode_name') or rec['mode']}"
+        src = rec.get("mode_source") or ""
+        mode_bit = (
+            f"  mode={rec.get('mode_emoji','')}{rec.get('mode_name') or rec['mode']}"
+            + (f"@{src}" if src else "")
+        )
+    imp = rec.get("importance") or (rec.get("mode_adjust") or {}).get("importance")
     if not compact:
         lines.append(
             f"# ROUTING  domain={rec['domain']} ({rec.get('label')})  "
             f"grade={rec['grade']}  conf={rec['confidence']}{mode_bit}"
         )
+        if imp:
+            lines.append(
+                f"importance: {imp.get('band')} → suggest {imp.get('suggested_mode')} "
+                f"({imp.get('reason')})"
+            )
     lines.append(
         f"primary: {rec['primary_provider']}/{rec['primary_model']}  "
         f"cost≈{rec['estimated_relative_cost']}  tier={rec['start_tier']}{mode_bit if compact else ''}"
@@ -1002,7 +1301,7 @@ def apply_account_env(account: dict) -> dict:
 # ── Project init ─────────────────────────────────────────────────────
 
 def init_project(project: Optional[Path] = None, force: bool = False) -> dict:
-    """Scaffold CLAUDE.md link + tasks/ in the user project."""
+    """Scaffold CLAUDE.md link + tasks/ + .effi/ in the user project."""
     proj = project or project_root()
     actions = []
     tasks = proj / "tasks"
@@ -1012,6 +1311,17 @@ def init_project(project: Optional[Path] = None, force: bool = False) -> dict:
         actions.append(f"created {tasks}")
     else:
         actions.append(f"exists {tasks}")
+
+    effi_dir = project_effi_dir(proj)
+    if not effi_dir.exists():
+        effi_dir.mkdir(parents=True)
+        (effi_dir / ".gitignore").write_text(
+            "# commit 'mode' if the team shares a default orchestration mode\nmode\n",
+            encoding="utf-8",
+        )
+        actions.append(f"created {effi_dir} (project mode lives here)")
+    else:
+        actions.append(f"exists {effi_dir}")
 
     claude_dst = proj / "CLAUDE.md"
     claude_src = ROOT / "CLAUDE.md"

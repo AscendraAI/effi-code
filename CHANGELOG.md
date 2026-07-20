@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.3.1 — 2026-07-21
+
+### Added
+- **Project-local mode pin** — `.effi/mode` (default scope for `effi mode set`)
+- **Task importance check** — high/medium/low → suggest Apex/Cruise/Sip
+- Interactive switch prompt on `effi route` / `use` / `new` when mode mismatches task
+- `effi mode check "task"` · `effi mode set … --global|--both`
+- Resolution order: `EFFI_MODE` → project → global → Cruise
+
 ## 4.3.0 — 2026-07-21
 
 ### Added

@@ -4,24 +4,40 @@
 > 라우팅 매트릭스: `catalog/task-routing.json` · 모델: `catalog/models.json` · **모드: `catalog/modes.json`**  
 > 근거: `docs/why.md` · 계정: `effi accounts` · 비용: `ROUTING.md`
 
-## 3 모드 (언제든 전환)
+## 3 모드 (프로젝트별 · 작업 중요도 연동)
 
-세션 시작(`effi` / `effi cloud`) 시 **모드가 없으면 물어본다.** 사용 중 전환:
+### 해석 순서
+1. `EFFI_MODE` 환경변수  
+2. **프로젝트** `.effi/mode` (기본 저장 위치)  
+3. 글로벌 `~/.config/effi/state.json`  
+4. 없으면 **Cruise** (또는 첫 cloud 세션에서 질문)
 
 ```bash
-effi mode set apex     # 또는 1 / max / 풀파워
-effi mode set cruise   # 또는 2 / balance
-effi mode set sip      # 또는 3 / thrift / 알뜰
-effi mode ask          # 메뉴로 다시 고르기
+effi mode set apex              # 이 프로젝트에 핀 (.effi/mode)
+effi mode set sip --global      # 모든 프로젝트 기본
+effi mode set cruise --both
+effi mode ask                   # 메뉴
+effi mode check "보안 감사"     # 중요도 보고 전환 제안
 ```
 
 | 모드 | 이름 | 한 줄 | 라우팅 성격 |
 |---|---|---|---|
-| **1** | 🚀 **Apex** | 꼭대기에서 내려찍는다 | 최고 모델 중심, **로컬 primary 금지**, 쿼터 임계 무시 |
-| **2** | 🛣 **Cruise** | 멀리 가는 순항 | 중상 성능 + 비용 절감 (기본 effi) |
-| **3** | ☕ **Sip** | 한 모금씩 | 로컬/cheap 우선, 완수 가능한 최소 비용 |
+| **1** | 🚀 **Apex** | 꼭대기에서 내려찍는다 | 최고 모델, 로컬 primary 금지, 쿼터 임계 무시 |
+| **2** | 🛣 **Cruise** | 멀리 가는 순항 | 중상 성능 + 비용 절감 (기본) |
+| **3** | ☕ **Sip** | 한 모금씩 | 로컬/cheap 우선, 최소 비용 |
 
-오케스트레이터(클로드)는 사용자 말이 “풀파워로 / 아껴서 / 알뜰 모드”면 **즉시 `effi mode set …`를 제안·실행**하고 log에 `[MODE]`를 남긴다.
+### 작업 중요도에 따른 질문
+`effi route` / `use` / `new` 시 작업을 평가한다:
+
+| 중요도 | 예 | 제안 모드 |
+|---|---|---|
+| **high** | 보안·아키텍처·L/XL·production/긴급 | Apex |
+| **medium** | 일반 기능·디버그 | Cruise |
+| **low** | 번역·docstring·S·bulk | Sip |
+
+현재 모드가 너무 약하거나(Sip로 보안) 과하면(Apex로 번역) **TTY에서 전환을 묻고**, 동의하면 **프로젝트 `.effi/mode`에 저장**한다.
+
+오케스트레이터는 “풀파워/아껴서” 발화 시 `effi mode set …` 를 제안하고 log에 `[MODE]` 를 남긴다.
 
 ## 원칙 (2026 증거)
 
