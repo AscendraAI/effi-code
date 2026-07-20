@@ -813,11 +813,13 @@ def doctor() -> dict:
             if a.get("type") == "oauth_profile" and a.get("config_dir"):
                 if Path(os.path.expanduser(a["config_dir"])).exists():
                     keyed += 1
-        add(
-            "accounts",
-            len(enabled) > 0,
-            f"{len(enabled)} enabled, {len(under)} under {thr}%, {keyed} credentials resolvable",
+        detail = (
+            f"{len(enabled)} enabled, {len(under)} under {thr}%, "
+            f"{keyed} credentials resolvable"
         )
+        if enabled and keyed == 0:
+            detail += " — set api_key_env exports (see docs/accounts.md)"
+        add("accounts", len(enabled) > 0, detail)
         if enabled and not under:
             checks.append(
                 {
@@ -827,12 +829,20 @@ def doctor() -> dict:
                 }
             )
             ok = False
+        if enabled and keyed == 0:
+            checks.append(
+                {
+                    "name": "accounts_credentials",
+                    "ok": True,  # soft: cloud may use default login
+                    "detail": "no api_key_env resolved — export keys or use oauth_profile (docs/accounts.md)",
+                }
+            )
     else:
         checks.append(
             {
                 "name": "accounts",
                 "ok": True,
-                "detail": "not configured (optional) — effi accounts init",
+                "detail": "not configured (optional) — effi accounts init · docs/accounts.md",
             }
         )
 

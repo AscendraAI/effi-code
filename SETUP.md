@@ -17,6 +17,8 @@ ln -s /path/to/effi-code/CLAUDE.md /your/project/CLAUDE.md
 
 ## 3. 멀티 Claude 계정 (선택)
 
+자세한 가이드: [`docs/accounts.md`](docs/accounts.md)
+
 ```bash
 effi accounts init
 # ~/.config/effi/accounts.json 편집
@@ -27,6 +29,7 @@ export ANTHROPIC_API_KEY_WORK2=sk-ant-...
 effi accounts threshold 80    # 사용량 80% 이상이면 다음 계정
 effi accounts meter work-primary 0
 effi accounts select
+effi doctor                   # credentials resolvable > 0 확인
 ```
 
 `effi`(cloud) 실행 시 threshold 미만 계정을 자동 선택하고 env를 적용합니다.

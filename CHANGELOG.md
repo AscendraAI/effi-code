@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.2.1 — 2026-07-21
+
+### Added
+- `docs/accounts.md` — multi-account API key / threshold setup guide
+- Doctor hints when accounts exist but `api_key_env` is unresolved
+
+### Fixed
+- CI workflow on `master` (pushed via SSH; Actions green)
+
 ## 4.2.0 — 2026-07-20
 
 Project name remains **effi-code**.
@@ -9,7 +18,7 @@ Project name remains **effi-code**.
 - `effi log <task> <TAG> <msg>` — append to project `tasks/<task>/log.md`
 - `CONTRIBUTING.md` — catalog update + design constraints
 - Linux `/proc` memory stats for doctor/pick outside macOS
-- `.github/workflows/ci.yml` — unit tests + CLI smoke (push needs GitHub token `workflow` scope)
+- `.github/workflows/ci.yml` — unit tests + CLI smoke
 
 ## 4.1.0 — 2026-07-20
 

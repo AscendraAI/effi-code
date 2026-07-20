@@ -1,6 +1,6 @@
 # effi-code
 
-**v4.2 (`VERSION` 4.2.0) — Multi-provider, cost-minimal coding orchestration.**  
+**v4.2 (`VERSION` 4.2.1) — Multi-provider, cost-minimal coding orchestration.**  
 Route each task to the best of **Claude · Codex (OpenAI) · Gemini · Grok · Local**, rotate Claude accounts at a usage threshold you set, and keep a biweekly model catalog honest.
 
 Project name: **effi-code** (CLI: `effi`).
@@ -117,6 +117,7 @@ effi catalog bump
 | [`CLAUDE.md`](CLAUDE.md) | drop-in session rules |
 | [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.2.0) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | catalog updates + PR rules |
+| [`docs/accounts.md`](docs/accounts.md) | multi-account keys + threshold rotation |
 
 ## Philosophy (evidence-backed)
 
