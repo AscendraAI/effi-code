@@ -1,147 +1,300 @@
+<div align="center">
+
 # effi-code
 
-**v4.3 (`VERSION` 4.3.1) — Multi-provider orchestration with 3 user modes.**  
-🚀 **Apex** · 🛣 **Cruise** · ☕ **Sip** — per-project pins + ask when task importance mismatches.
+### Cost-aware multi-provider coding orchestration
 
-Project name: **effi-code** (CLI: `effi`).
+**CLI:** `effi` · **Version:** [`4.3.1`](VERSION)
 
-**English** | [한국어](README_ko.md)
+Route every task to the right model among **Claude · Codex (OpenAI) · Gemini · Grok · Local**,  
+run under one of three modes — **Apex / Cruise / Sip** — and keep working when quota runs out.
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml) ![Orchestration](https://img.shields.io/badge/orchestration-v4.3-green) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
+[English](README.md) · [한국어](README_ko.md)
 
-> Not a heavyweight framework. Files + small CLIs + a way of working.  
-> **Right model per task. Single writer. Clean-context verify. Cache-safe main thread.**
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
+![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
+![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
+![Version](https://img.shields.io/badge/version-4.3.1-green)
+
+[Quick start](#quick-start) ·
+[Modes](#modes-apex--cruise--sip) ·
+[How it works](#how-it-works) ·
+[Commands](#commands) ·
+[Repository layout](#repository-layout) ·
+[Documentation](#documentation) ·
+[Development](#development) ·
+[Contributing](#contributing) ·
+[License](#license)
+
+</div>
 
 ---
 
-## What v4 adds
+## What is effi-code?
 
-| # | Capability |
-|---|---|
-| 1 | **Task → optimal model** across Claude / OpenAI-Codex / Gemini / Grok / Ollama (`effi route`) |
-| 2 | **Multi Claude accounts** with configurable usage threshold (`effi accounts threshold 80`) |
-| 3 | **Task + RAM local pick** (not one fixed model) + **14-day catalog review** (`effi catalog`) |
-| 4 | **Full delivery loop** — plan → architecture → design → implement → test → review → deploy |
+**effi-code is not a framework and not a background server.**  
+It is a small toolkit — files, CLIs, and a way of working — that turns a Claude Code session into a **cost-aware lead orchestrator**:
+
+| Pillar | Idea |
+|--------|------|
+| **Route** | Task → cheapest *sufficient* model (domain matrix + active mode) |
+| **Mode** | 🚀 Apex · 🛣 Cruise · ☕ Sip — per project, switch anytime |
+| **Write once** | Single writer; helpers return paths + short summaries only |
+| **Verify clean** | Adversarial review in a **fresh context** (not the generator’s chat) |
+| **Survive quota** | Multi-account rotation + free local (Ollama) backstop |
+
+> **Top model where it counts. Cheap models everywhere else. Local when the meter runs out.**
+
+Design choices are grounded in 2026 research and production practice — see [`docs/why.md`](docs/why.md).
+
+---
 
 ## Quick start
 
-```bash
-git clone https://github.com/AscendraAI/effi-code && cd effi-code
-./setup.sh
-export PATH="$PWD/bin:$PATH"
+### Requirements
 
-# Session rules in any project
-ln -s /path/to/effi-code/CLAUDE.md ./CLAUDE.md
+- macOS or Linux (Apple Silicon well-tested for local models)
+- [Claude Code](https://claude.com/claude-code) (`claude` on `PATH`)
+- Optional: [Ollama](https://ollama.com) for local / quota fallback
+- Optional: Codex / Gemini / Grok CLIs for isolated subtasks
 
-# Multi-account (optional)
-effi accounts init
-effi accounts threshold 80
-effi accounts meter work-primary 10
+### Install
 
-# In any app repo
+```sh
+git clone https://github.com/AscendraAI/effi-code.git
+cd effi-code
+./setup.sh                          # Ollama + recommended local model (macOS)
+export PATH="$PWD/bin:$PATH"        # or symlink bin/* into /opt/homebrew/bin
+```
+
+### Wire any app repo
+
+```sh
 cd /path/to/your-app
-effi init
-effi mode ask        # 🚀 Apex · 🛣 Cruise · ☕ Sip
-effi doctor
+effi init                 # tasks/ · CLAUDE.md · .effi/
+effi mode ask             # pick Apex / Cruise / Sip (saved to this project)
+effi doctor               # health check
 effi use "add rate-limit middleware + tests"
 effi new auth-rate "add rate-limit middleware + tests"
-effi                 # asks mode if unset; then Claude cloud
+effi                      # Claude cloud (mode banner + account select)
 ```
 
-### Modes
+After edits:
 
-| | | |
-|---|---|---|
-| 🚀 **Apex** | Max performance | Top models, no local primary, ignore usage threshold |
-| 🛣 **Cruise** | Balanced (default) | Domain matrix + escalate only when needed |
-| ☕ **Sip** | Min cost | Local/cheap first; Sonnet ceiling for hard bits |
-
-```bash
-effi mode set apex              # pin this project (.effi/mode)
-effi mode set sip --global      # all projects default
-effi mode check "security audit"  # importance → offer switch
-# effi route / use / new also prompt when mode is too weak or too heavy for the task
+```sh
+effi review -o tasks/auth-rate/workers/review
+effi log auth-rate COMPLETE "shipped"
 ```
 
+---
 
-## Routing examples
+## Modes (Apex · Cruise · Sip)
 
-```text
-$ effi route "분산 트랜잭션 아키텍처 재설계"
-primary: claude/claude-opus-4-8  cost≈high
+Modes are **project-local by default** (`.effi/mode`).  
+Resolution order: `EFFI_MODE` env → **project** → global `~/.config/effi` → **Cruise**.
 
-$ effi route "일반 기능 구현과 단위 테스트"
-primary: claude/claude-sonnet-5  cost≈mid
+| | Mode | Best for | Routing bias |
+|---|------|----------|--------------|
+| 🚀 | **Apex** | Hard design, security, “don’t care about cost” | Top models (Opus-class); **no local primary**; ignore account usage threshold |
+| 🛣 | **Cruise** | Day-to-day features (default) | Domain matrix; escalate only after failed verification |
+| ☕ | **Sip** | Simple / bulk work or scarce quota | Local & cheap first; Sonnet ceiling for harder slices |
 
-$ effi route "UI 목업 디자인"
-primary: gemini/gemini-3.5-flash
-
-$ effi route "40개 문자열 한국어 번역"
-primary: local/<ram-picked-model>  cost≈free
+```sh
+effi mode set apex                 # pin this project
+effi mode set sip --global         # default for all projects
+effi mode set cruise --both
+effi mode check "security audit"   # importance → offer switch
 ```
 
-Matrix: [`catalog/task-routing.json`](catalog/task-routing.json) · Models: [`catalog/models.json`](catalog/models.json)
+### Task importance prompts
 
-## Core loop
+On `effi route` / `use` / `new`, effi scores the task:
+
+| Importance | Examples | Suggests |
+|------------|----------|----------|
+| **high** | security, architecture, L/XL, production / urgent | Apex |
+| **medium** | normal features, debug | Cruise |
+| **low** | translate, docstring, bulk, grade S | Sip |
+
+If the active mode is too weak or too expensive for that band, **TTY sessions ask before switching** and pin the choice to the project.
+
+---
+
+## How it works
+
+### Core loop
 
 ```
 TRIAGE → PLAN → DO → VERIFY → SHIP
 ```
 
-- **TRIAGE:** `effi route` → domain + model + review level  
-- **DO:** single writer; cross-provider only on **isolated** subtasks  
-- **VERIFY:** clean-context adversarial review (`effi review`)  
-- **Main thread stays on Claude** so prompt cache is not shattered (~10× on misses)
+1. **TRIAGE** — `effi route` / `use`: domain, grade, model, review level, mode  
+2. **PLAN** — short plan in `tasks/<job>/task.md` (L/XL longer)  
+3. **DO** — **single writer** on the main Claude thread; isolated helpers only  
+4. **VERIFY** — tests + clean-context review (`effi review`)  
+5. **SHIP** — log `[COMPLETE]`; prod deploy needs an approval gate  
 
-## Accounts
+### Providers (catalog-driven)
 
-```bash
+| Provider | Role examples |
+|----------|----------------|
+| **Claude** | Main thread (cache continuity), Opus judgment, Sonnet implement |
+| **OpenAI / Codex** | Isolated implement / review subtasks |
+| **Gemini** | Design, multimodal, long-context research |
+| **Grok** | Realtime research, value coding |
+| **Local (Ollama)** | Mechanical bulk + quota backstop (`effi pick` by free RAM) |
+
+Matrices live in:
+
+- [`catalog/task-routing.json`](catalog/task-routing.json) — domain → primary model  
+- [`catalog/models.json`](catalog/models.json) — model ladder & costs  
+- [`catalog/modes.json`](catalog/modes.json) — Apex / Cruise / Sip policy  
+
+### Routing examples (Cruise)
+
+```text
+$ effi route --compact "redesign distributed transaction architecture"
+domain=architecture … model=claude/claude-opus-4-8 cost=high
+
+$ effi route --compact "add rate limit middleware and unit tests"
+domain=implement … model=claude/claude-sonnet-5 cost=mid
+
+$ effi route --compact "landing page UI mockup"
+domain=design … model=gemini/gemini-3.5-flash
+
+$ effi route --compact "translate 40 UI strings"
+domain=bulk … model=local/<ram-picked> cost=free
+```
+
+### Accounts & local fallback
+
+```sh
 effi accounts init
-effi accounts threshold 75          # your choice
-effi accounts meter work-primary 72
-effi accounts list
-# effi (cloud) auto-selects an account under the threshold
+effi accounts threshold 80
+export ANTHROPIC_API_KEY_WORK=sk-ant-…   # see docs/accounts.md
+effi accounts meter work-primary 0
+effi                             # auto-select under threshold
+
+effi local                       # Ollama backend when paid quota is gone
+effi pick --task "bulk translate"
+effi run -t "translate" "…"
 ```
 
-API keys via env vars (see `config/accounts.example.json`). OAuth profiles via isolated `config_dir`.  
-No subscription OAuth proxying (Anthropic ToS).
+> **ToS:** do not proxy subscription OAuth through third-party routers.  
+> Use the honest toggle (`effi` ↔ `effi local`) or API keys.
 
-## Local models
+### Philosophy (short)
 
-```bash
-effi pick --task "docstring bulk"
-effi run -t "번역" "…"
-effi local          # full Claude Code on Ollama when quota is gone
+1. Multi-agent coding often costs **~15× tokens** — use one strong lead; parallelize only true read/review work ([Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system)).  
+2. **Writes stay single-threaded**; review in a clean context ([Cognition](https://cognition.com/blog/multi-agents-working)).  
+3. Save money with **routing + prompt-cache continuity**, not by silently dumbing down the lead.  
+4. Local is a **backstop**, not the architect.
+
+---
+
+## Commands
+
+| Command | Purpose |
+|---------|---------|
+| `effi` / `effi cloud` | Claude Code session (mode banner + account select) |
+| `effi local` | Claude Code on Ollama (MCP stripped for small models) |
+| `effi mode …` | Show / set / ask / check Apex·Cruise·Sip |
+| `effi route "…"` | Task → model (mode-aware; may prompt on importance) |
+| `effi use "…"` | Route + how to run (`--exec` for Claude) |
+| `effi init` | Wire project: `tasks/`, `CLAUDE.md`, `.effi/` |
+| `effi doctor` | Health check |
+| `effi new <name> [goal]` | Scaffold task folder under **project root** |
+| `effi log <name> <TAG> <msg>` | Append to `tasks/<name>/log.md` |
+| `effi review [-o dir]` | Clean-context review pack (diff + brief) |
+| `effi pick` / `effi run` | Local model pick / mechanical worker |
+| `effi accounts …` | Multi-account threshold rotation |
+| `effi catalog …` | Biweekly model catalog status / research / bump |
+| `effi status` | Snapshot: mode, project, Ollama, accounts |
+
+```sh
+effi help
 ```
 
-## Catalog (every ~2 weeks)
+---
 
-```bash
-effi catalog research   # official docs checklist
-# edit catalog/models.json + task-routing.json
-effi catalog bump
+## Repository layout
+
+| Path | Contents |
+|------|----------|
+| [`bin/`](bin/) | CLI entrypoints (`effi`, `effi-mode`, `effi-route`, …) |
+| [`lib/effi_core.py`](lib/effi_core.py) | Routing, modes, accounts, doctor, project roots |
+| [`catalog/`](catalog/) | `models.json`, `task-routing.json`, `modes.json` |
+| [`config/`](config/) | Example accounts & user config (no secrets) |
+| [`templates/`](templates/) | `task`, `log`, `brief`, `review`, `handoff` |
+| [`docs/`](docs/) | Why, domains, accounts guides |
+| [`ORCHESTRATION.md`](ORCHESTRATION.md) | Operating rules for the lead agent |
+| [`CLAUDE.md`](CLAUDE.md) | Drop-in session rules for any project |
+| [`tests/`](tests/) | Unit tests (routing, modes, importance) |
+| [`setup.sh`](setup.sh) | macOS-oriented bootstrap |
+
+> Task artifacts belong in **your app’s** `tasks/` (via `effi init` / `effi new`), not inside this toolkit clone.
+
+---
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [`ORCHESTRATION.md`](ORCHESTRATION.md) | 5-step loop, modes, gates |
+| [`ROUTING.md`](ROUTING.md) | Cost discipline & cache trap |
+| [`CLAUDE.md`](CLAUDE.md) | Session rules pointer |
+| [`FALLBACK.md`](FALLBACK.md) | Quota → local toggle |
+| [`LOCAL-MODELS.md`](LOCAL-MODELS.md) | Local ladder & RAM rules |
+| [`SETUP.md`](SETUP.md) | Setup walkthrough |
+| [`docs/why.md`](docs/why.md) | Research citations |
+| [`docs/domains.md`](docs/domains.md) | Plan → deploy pipeline |
+| [`docs/accounts.md`](docs/accounts.md) | Multi-account setup |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Catalog updates & PR rules |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history |
+
+---
+
+## Development
+
+```sh
+export PATH="$PWD/bin:$PATH"
+export PYTHONPATH="$PWD/lib"
+
+python3 -m unittest discover -s tests -v
+effi doctor
+effi route --compact "add rate limit middleware and unit tests"
+effi mode list
 ```
 
-## Docs
+CI runs the same tests on every push/PR: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
-| File | |
-|---|---|
-| [`ORCHESTRATION.md`](ORCHESTRATION.md) | v4 operating rules |
-| [`ROUTING.md`](ROUTING.md) | cost + cache discipline |
-| [`docs/domains.md`](docs/domains.md) | plan→deploy pipeline |
-| [`docs/why.md`](docs/why.md) | citations (2026-07) |
-| [`CLAUDE.md`](CLAUDE.md) | drop-in session rules |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.2.0) |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | catalog updates + PR rules |
-| [`docs/accounts.md`](docs/accounts.md) | multi-account keys + threshold rotation |
+---
 
-## Philosophy (evidence-backed)
+## Contributing
 
-1. Strong lead + cheap workers beats all-Opus on cost; multi-agent coding is often a **15× token trap** (Anthropic).  
-2. Writes single-threaded; review in a **fresh context** (Cognition).  
-3. Save money by **routing + cache continuity**, not by silently weakening the lead.  
-4. Local is backstop + bulk — not the architect.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Highlights:
+
+- Update model IDs only from **official provider docs** (`effi catalog research`).  
+- Do not regress: single-writer, main-thread cache lock, clean-context review, project-root tasks.  
+- Never commit real API keys (`~/.config/effi/accounts.json` stays local).
+
+---
+
+## Honest limits
+
+- Local models do not match cloud on hard multi-file work.  
+- Subscription users switch to local **manually** (`effi local`) — ToS-clean.  
+- Busy 16 GB machines stay on small local models — memory is the ceiling.  
+- Agent Teams (Claude Code experimental) are optional and expensive — XL only.  
+- Catalog IDs/prices drift; re-check every ~14 days.
+
+---
 
 ## License
 
-Apache-2.0 — [`LICENSE`](LICENSE) / [`NOTICE`](NOTICE). © 2026 AscendraAI.
+First-party code is licensed under the **Apache License, Version 2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+Copyright © 2026 AscendraAI.
