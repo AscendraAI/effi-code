@@ -4,7 +4,7 @@
 
 ### 비용을 의식한 멀티 프로바이더 코딩 오케스트레이션
 
-**CLI:** `effi` · **버전:** [`4.4.0`](VERSION)
+**CLI:** `effi` · **버전:** [`4.4.1`](VERSION)
 
 **Claude · Codex (OpenAI) · Gemini · Grok · Local** 중 업무에 맞는 모델로 라우팅하고,  
 **Apex / Cruise / Sip** 세 모드로 성능·비용을 조절하며, 쿼터가 바닥나도 작업을 이어갑니다.
@@ -15,7 +15,7 @@
 [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
-![Version](https://img.shields.io/badge/version-4.4.0-green)
+![Version](https://img.shields.io/badge/version-4.4.1-green)
 
 [빠른 시작](#빠른-시작) ·
 [모드](#모드-apex--cruise--sip) ·

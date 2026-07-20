@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.4.1 — 2026-07-21
+
+### Fixed
+- **`effi` / `effi cloud` mode prompt** — global `~/.config/effi` mode no longer skips the ask.
+  Prompt runs when the **project** has no `.effi/mode` (and no `EFFI_MODE`); global is Enter-default only.
+- `effi mode clear [--global|--both]` to drop pins
+- `effi mode` status explains whether the next cloud launch will ask
+
 ## 4.4.0 — 2026-07-21
 
 ### Added

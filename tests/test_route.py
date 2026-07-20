@@ -162,6 +162,51 @@ class RouteTests(unittest.TestCase):
             finally:
                 os.environ.pop("EFFI_PROJECT", None)
 
+    def test_ensure_mode_skips_only_project_or_env(self):
+        """Global pin alone must not skip ensure_mode's need to ask (non-TTY path)."""
+        from effi_core import ensure_mode, project_mode_is_set, set_mode, clear_mode
+
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["EFFI_PROJECT"] = td
+            # isolate global state so test is deterministic
+            prev_home = os.environ.get("HOME")
+            fake_home = tempfile.mkdtemp()
+            try:
+                os.environ["HOME"] = fake_home
+                # no project pin → non-interactive returns cruise default
+                self.assertFalse(project_mode_is_set())
+                m = ensure_mode(interactive=False)
+                self.assertEqual(m["id"], "cruise")
+                # after project pin, ensure returns pinned without needing TTY
+                set_mode("sip", scope="project")
+                self.assertTrue(project_mode_is_set())
+                m2 = ensure_mode(interactive=False)
+                self.assertEqual(m2["id"], "sip")
+                self.assertEqual(m2["source"], "project")
+                clear_mode("project")
+                self.assertFalse(project_mode_is_set())
+            finally:
+                if prev_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = prev_home
+                os.environ.pop("EFFI_PROJECT", None)
+                import shutil
+                shutil.rmtree(fake_home, ignore_errors=True)
+
+    def test_clear_mode_project(self):
+        from effi_core import clear_mode, set_mode, read_project_mode
+
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["EFFI_PROJECT"] = td
+            try:
+                set_mode("apex", scope="project")
+                self.assertEqual(read_project_mode(), "apex")
+                clear_mode("project")
+                self.assertIsNone(read_project_mode())
+            finally:
+                os.environ.pop("EFFI_PROJECT", None)
+
 
 if __name__ == "__main__":
     unittest.main()

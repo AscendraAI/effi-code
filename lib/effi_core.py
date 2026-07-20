@@ -261,6 +261,49 @@ def mode_is_set() -> bool:
     return mode_source() != "default"
 
 
+def project_mode_is_set(project: Optional[Path] = None) -> bool:
+    """True when this project has a local pin (.effi/mode)."""
+    return read_project_mode(project) is not None
+
+
+def clear_mode(scope: str = "project") -> dict:
+    """Remove mode pin(s). scope: project | global | both."""
+    scope = (scope or "project").lower()
+    removed: list[str] = []
+    proj = project_root()
+
+    if scope in ("project", "both", "local"):
+        p = project_mode_path(proj)
+        if p.is_file():
+            p.unlink()
+            removed.append(str(p))
+        legacy = proj / ".effi-mode"
+        if legacy.is_file():
+            legacy.unlink()
+            removed.append(str(legacy))
+
+    if scope in ("global", "both", "user"):
+        st = load_state()
+        if st.get("mode") is not None:
+            st.pop("mode", None)
+            st.pop("mode_set_at", None)
+            save_state(st)
+            removed.append(str(DEFAULT_STATE))
+        try:
+            cfg = load_config()
+            if "mode" in cfg:
+                cfg.pop("mode", None)
+                _save_json(DEFAULT_CONFIG, cfg)
+                removed.append(str(DEFAULT_CONFIG))
+        except Exception:
+            pass
+
+    m = get_mode()
+    m["cleared"] = removed
+    m["scope"] = scope
+    return m
+
+
 def list_modes() -> list[dict]:
     modes = _modes_map()
     cur = get_mode().get("id")
@@ -297,24 +340,45 @@ def print_mode_menu(stream=None, context: Optional[str] = None) -> None:
 
 
 def ensure_mode(interactive: bool = True, scope: str = "project") -> dict:
-    """Return active mode; if unset and interactive TTY, ask and pin to project."""
-    if mode_is_set():
+    """Return active mode; on TTY ask once per project when no project pin.
+
+    Skip ask only when:
+      - EFFI_MODE is set, or
+      - this project already has `.effi/mode`
+
+    Global `~/.config/effi` mode is a soft default (Enter keeps it) — it must
+    NOT silence the per-project prompt. Otherwise first `effi` after any
+    global pin never asks, which feels broken.
+    """
+    if os.environ.get("EFFI_MODE"):
         return get_mode()
+    if project_mode_is_set():
+        return get_mode()
+
     if interactive and sys.stdin.isatty() and sys.stderr.isatty():
-        print_mode_menu(context="first run for this environment")
+        cur = get_mode()  # may resolve from global → used as Enter default
+        print_mode_menu(
+            context=(
+                f"project={project_root()} · "
+                f"Enter keeps {cur.get('emoji', '')} {cur.get('name')} ({cur.get('id')})"
+            )
+        )
         try:
             sys.stderr.write("mode> ")
             sys.stderr.flush()
             line = sys.stdin.readline()
         except EOFError:
             line = ""
-        choice = (line or "").strip() or "cruise"
+        choice = (line or "").strip() or cur.get("id") or "cruise"
         try:
             return set_mode(choice, scope=scope)
         except KeyError as e:
-            sys.stderr.write(f"  ! {e} — defaulting to Cruise\n")
-            return set_mode("cruise", scope=scope)
-    return get_mode("cruise")
+            fallback = cur.get("id") or "cruise"
+            sys.stderr.write(f"  ! {e} — keeping {fallback}\n")
+            return set_mode(fallback, scope=scope)
+
+    # Non-TTY: honor global / default without pinning
+    return get_mode()
 
 
 # Importance bands for task → suggested mode

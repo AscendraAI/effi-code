@@ -10,7 +10,9 @@
 1. `EFFI_MODE` 환경변수  
 2. **프로젝트** `.effi/mode` (기본 저장 위치)  
 3. 글로벌 `~/.config/effi/state.json`  
-4. 없으면 **Cruise** (또는 첫 cloud 세션에서 질문)
+4. 없으면 **Cruise**  
+   - **프로젝트 핀이 없으면** `effi` / `effi cloud` (TTY)가 모드를 묻는다  
+   - 글로벌 모드는 Enter 기본값일 뿐, 질문을 막지 않는다
 
 ```bash
 effi mode set apex              # 이 프로젝트에 핀 (.effi/mode)

@@ -69,15 +69,20 @@ case "$MODE" in
   cloud)
     # clear local overrides
     unset ANTHROPIC_BASE_URL ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL 2>/dev/null || true
-    # Mode: ask once if unset (TTY), then banner
+    # Mode: ask once per project if no project pin (TTY), then banner
     python3 - <<'PY'
-from effi_core import ensure_mode, get_mode, mode_is_set
+from effi_core import ensure_mode, mode_source
 m = ensure_mode(interactive=True)
 print(f"▶ {m.get('emoji','')} {m['name'].upper()} · {m.get('banner')}")
-if not mode_is_set():
-    print("  (ephemeral default — pin with: effi mode set cruise)")
+src = m.get("source") or mode_source()
+if src == "project":
+    print("  project pin · switch: effi mode set apex|cruise|sip")
+elif src == "env":
+    print("  EFFI_MODE · unset to pick per project")
+elif src == "global":
+    print("  global default · pin this project: effi mode set …")
 else:
-    print("  switch anytime: effi mode set apex|cruise|sip")
+    print("  (default Cruise — pin with: effi mode set cruise)")
 PY
     apply_cloud_account
     echo "▶ CLOUD · rules: ORCHESTRATION.md + catalog routing"

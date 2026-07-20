@@ -7,6 +7,7 @@
 #   effi mode set sip --global
 #   effi mode set cruise --both
 #   effi mode ask             # interactive (saves to project)
+#   effi mode clear           # remove project pin (or --global / --both)
 #   effi mode check "task…"   # importance → suggest switch (interactive)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,20 +31,25 @@ done
 case "$CMD" in
   show|status|"")
     python3 - <<'PY'
-from effi_core import get_mode, mode_is_set, mode_source, project_mode_path, project_root, print_mode_menu
+from effi_core import get_mode, mode_source, project_mode_is_set, project_mode_path, project_root, print_mode_menu
 m = get_mode()
 src = mode_source()
 print(f"{m.get('emoji','')} {m['name']}  [{m['id']}]  · source={src}")
 print(f"  {m.get('tagline')}")
 print(f"  project: {project_root()}")
 print(f"  project pin file: {project_mode_path()}")
-if src == "default":
-    print("  (not pinned — will ask on first cloud session / mode ask)")
+if project_mode_is_set():
+    print("  project pin: yes — `effi` will not re-ask here")
+elif src == "env":
+    print("  EFFI_MODE set — skips interactive ask")
+else:
+    print("  no project pin — next `effi` / `effi cloud` will ask (TTY)")
 print()
 print_mode_menu()
 print(f"active → {m['id']} @{src}")
 print("set project: effi mode set apex")
 print("set global:  effi mode set apex --global")
+print("clear pin:   effi mode clear [--global|--both]")
 PY
     ;;
   list)
@@ -94,6 +100,22 @@ for p in m.get("saved_to") or []:
     print(f"  saved: {p}")
 PY
     ;;
+  clear|unset|reset)
+    SCOPE="$SCOPE" python3 - <<'PY'
+import os
+from effi_core import clear_mode, get_mode
+scope = os.environ.get("SCOPE") or "project"
+m = clear_mode(scope)
+print(f"✓ cleared scope={scope}")
+for p in m.get("cleared") or []:
+    print(f"  removed: {p}")
+if not (m.get("cleared") or []):
+    print("  (nothing to remove)")
+now = get_mode()
+print(f"  now: {now.get('emoji','')} {now['name']} ({now['id']}) · source={now.get('source')}")
+print("  next `effi` will ask if no project pin / EFFI_MODE")
+PY
+    ;;
   check)
     TEXT="${ARGS[*]:-}"
     [ -z "$TEXT" ] && { echo "usage: effi mode check \"task description\"" >&2; exit 1; }
@@ -118,16 +140,19 @@ effi mode — Apex / Cruise / Sip
   effi mode list
   effi mode set <name> [--project|--global|--both]
   effi mode ask [--global]
+  effi mode clear [--global|--both]
   effi mode check "task…"   assess importance, offer switch
 
-Resolution order: EFFI_MODE env → project .effi/mode → global state → cruise
+Resolution: EFFI_MODE → project .effi/mode → global → cruise
+Ask on `effi`/`effi cloud`: only when no project pin and no EFFI_MODE
+  (global is Enter-default, does not skip the question)
 EOF
     ;;
   *)
     if [[ "$CMD" =~ ^(apex|cruise|sip|1|2|3|max|min|thrift|balance)$ ]]; then
       exec "$0" set "$CMD" ${SCOPE:+--$SCOPE}
     fi
-    echo "usage: effi mode [show|list|set|ask|check]" >&2
+    echo "usage: effi mode [show|list|set|ask|clear|check]" >&2
     exit 1
     ;;
 esac
