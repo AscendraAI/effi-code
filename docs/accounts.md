@@ -1,7 +1,10 @@
 # Claude multi-account setup
 
-Goal: keep coding when one plan hits its limit by rotating accounts at a **user-defined usage %**.
+> **You can use effi-code with only Claude Code (or other LLM) plan logins — no API keys.**  
+> This doc is for the **optional** multi-account / API path.  
+> Default day-to-day: `effi` (logged-in Claude Code) → `effi local` when the plan limit hits.
 
+Goal: keep coding when one plan hits its limit by rotating accounts at a **user-defined usage %**.
 ## 1. Init config
 
 ```bash

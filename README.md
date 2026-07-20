@@ -48,6 +48,20 @@ It is a small toolkit — files, CLIs, and a way of working — that turns a Cla
 
 Design choices are grounded in 2026 research and production practice — see [`docs/why.md`](docs/why.md).
 
+### Auth: login is enough (API keys optional)
+
+**You do not need Anthropic/OpenAI/Google API keys to use the core loop.**
+
+| Path | What you need | Notes |
+|------|----------------|--------|
+| **Default lead** | Claude Code **subscription login** (`claude` once in browser/device flow) | `effi` / `effi cloud` uses that session — no `ANTHROPIC_API_KEY` required |
+| **Helpers** | Each tool’s own **app/CLI login** (Codex, Gemini CLI, Grok, …) when you choose to spawn them | Still login-based if the product supports it |
+| **Local** | Ollama + a pulled model | Zero cloud billing; no vendor API key |
+| **Optional** | API keys in `effi accounts` | Only if you want **multi-key rotation**, metering, or pure API (non-subscription) backends |
+
+Routing still *recommends* models by capability; **how you pay** is usually a plan login, not a developer API key.  
+API keys are an upgrade path, not a requirement.
+
 ---
 
 ## Quick start
@@ -55,9 +69,10 @@ Design choices are grounded in 2026 research and production practice — see [`d
 ### Requirements
 
 - macOS or Linux (Apple Silicon well-tested for local models)
-- [Claude Code](https://claude.com/claude-code) (`claude` on `PATH`)
-- Optional: [Ollama](https://ollama.com) for local / quota fallback
-- Optional: Codex / Gemini / Grok CLIs for isolated subtasks
+- [Claude Code](https://claude.com/claude-code) on `PATH`, **logged in** with your plan (Pro/Max/Team — whatever you already use)
+- Optional: [Ollama](https://ollama.com) for local / quota fallback (**no cloud API**)
+- Optional: Codex / Gemini / Grok CLIs, each logged in the normal app way, for isolated subtasks
+- Optional: API keys — only for multi-account automation or raw API access ([`docs/accounts.md`](docs/accounts.md))
 
 ### Install
 
@@ -66,6 +81,9 @@ git clone https://github.com/AscendraAI/effi-code.git
 cd effi-code
 ./setup.sh                          # Ollama + recommended local model (macOS)
 export PATH="$PWD/bin:$PATH"        # or symlink bin/* into /opt/homebrew/bin
+
+# One-time: log into Claude Code (subscription) if you have not already
+claude                              # complete browser/device login, then quit
 ```
 
 ### Wire any app repo
@@ -74,10 +92,10 @@ export PATH="$PWD/bin:$PATH"        # or symlink bin/* into /opt/homebrew/bin
 cd /path/to/your-app
 effi init                 # tasks/ · CLAUDE.md · .effi/
 effi mode ask             # pick Apex / Cruise / Sip (saved to this project)
-effi doctor               # health check
+effi doctor               # health check (API keys not required)
 effi use "add rate-limit middleware + tests"
 effi new auth-rate "add rate-limit middleware + tests"
-effi                      # Claude cloud (mode banner + account select)
+effi                      # uses your Claude Code login — no API key needed
 ```
 
 After edits:
@@ -167,22 +185,32 @@ $ effi route --compact "translate 40 UI strings"
 domain=bulk … model=local/<ram-picked> cost=free
 ```
 
-### Accounts & local fallback
+### Quota, accounts & local fallback
+
+**Most users:** stay on Claude Code login → when the plan hits a wall, run `effi local` (Ollama). No API key.
 
 ```sh
-effi accounts init
-effi accounts threshold 80
-export ANTHROPIC_API_KEY_WORK=sk-ant-…   # see docs/accounts.md
-effi accounts meter work-primary 0
-effi                             # auto-select under threshold
-
-effi local                       # Ollama backend when paid quota is gone
+effi                  # subscription / plan login
+# … hit usage limit …
+effi local            # free local backend (MCP stripped for small models)
 effi pick --task "bulk translate"
 effi run -t "translate" "…"
 ```
 
+**Optional — multi-account / API rotation** (when you *do* have keys or isolated OAuth profiles):
+
+```sh
+effi accounts init
+effi accounts threshold 80
+# either: api_key_env exports  OR  oauth_profile config_dir per account
+effi accounts meter work-primary 72
+effi                             # pick account under threshold
+```
+
+See [`docs/accounts.md`](docs/accounts.md).
+
 > **ToS:** do not proxy subscription OAuth through third-party routers.  
-> Use the honest toggle (`effi` ↔ `effi local`) or API keys.
+> Prefer the honest toggle (`effi` ↔ `effi local`) or official multi-login / API setups.
 
 ### Philosophy (short)
 

@@ -48,6 +48,20 @@
 
 설계 근거는 2026년 연구·실무 측정에 기반합니다 — [`docs/why.md`](docs/why.md).
 
+### 인증: 로그인만으로 충분 (API 키는 선택)
+
+**핵심 루프를 돌리는 데 Anthropic/OpenAI/Google API 키는 필요 없습니다.**
+
+| 경로 | 필요한 것 | 설명 |
+|------|-----------|------|
+| **기본 리드** | Claude Code **구독/플랜 로그인** (`claude` 한 번 브라우저·기기 로그인) | `effi` / `effi cloud`가 그 세션을 씀 — `ANTHROPIC_API_KEY` 불필요 |
+| **헬퍼** | 각 도구의 **앱/CLI 로그인** (Codex, Gemini CLI, Grok 등) | 제품이 지원하면 로그인만으로 가능 |
+| **로컬** | Ollama + 받은 모델 | 클라우드 과금 없음 · 벤더 API 키 없음 |
+| **선택** | `effi accounts`용 API 키 | **다중 키 로테이션**, 미터링, 순수 API 백엔드가 필요할 때만 |
+
+라우팅은 “어떤 모델이 맞는지”를 추천하고, **결제 방식은 보통 플랜 로그인**입니다.  
+API 키는 필수 조건이 아니라 **업그레이드 옵션**입니다.
+
 ---
 
 ## 빠른 시작
@@ -55,9 +69,10 @@
 ### 준비물
 
 - macOS 또는 Linux (로컬 모델은 Apple Silicon 검증이 두터움)
-- [Claude Code](https://claude.com/claude-code) (`claude`가 PATH에 있어야 함)
-- 선택: [Ollama](https://ollama.com) — 로컬 / 쿼터 폴백
-- 선택: Codex / Gemini / Grok CLI — 격리 서브태스크용
+- [Claude Code](https://claude.com/claude-code)가 PATH에 있고, **평소 쓰던 플랜으로 로그인**된 상태
+- 선택: [Ollama](https://ollama.com) — 로컬 / 쿼터 폴백 (**클라우드 API 불필요**)
+- 선택: Codex / Gemini / Grok CLI — 각 제품 방식으로 로그인 후 격리 서브태스크
+- 선택: API 키 — 다중 계정 자동화·순수 API용 ([`docs/accounts.md`](docs/accounts.md))
 
 ### 설치
 
@@ -66,6 +81,9 @@ git clone https://github.com/AscendraAI/effi-code.git
 cd effi-code
 ./setup.sh                          # Ollama + 권장 로컬 모델 (macOS)
 export PATH="$PWD/bin:$PATH"        # 또는 bin/* 를 /opt/homebrew/bin 에 링크
+
+# 한 번만: 아직 안 했다면 Claude Code 구독 로그인
+claude                              # 브라우저/기기 로그인 후 종료
 ```
 
 ### 아무 앱 저장소에 연결
@@ -74,10 +92,10 @@ export PATH="$PWD/bin:$PATH"        # 또는 bin/* 를 /opt/homebrew/bin 에 링
 cd /path/to/your-app
 effi init                 # tasks/ · CLAUDE.md · .effi/
 effi mode ask             # Apex / Cruise / Sip 선택 (이 프로젝트에 저장)
-effi doctor               # 상태 점검
+effi doctor               # 상태 점검 (API 키 없어도 OK)
 effi use "레이트리밋 미들웨어 + 테스트 추가"
 effi new auth-rate "레이트리밋 미들웨어 + 테스트 추가"
-effi                      # 클로드 클라우드 (모드 배너 + 계정 선택)
+effi                      # Claude Code 로그인 세션 사용 — API 키 불필요
 ```
 
 구현 후:
@@ -167,22 +185,32 @@ $ effi route --compact "UI 문자열 40개 번역"
 domain=bulk … model=local/<ram-picked> cost=free
 ```
 
-### 계정 & 로컬 폴백
+### 쿼터, 계정 & 로컬 폴백
+
+**대부분 사용자:** Claude Code 로그인 유지 → 플랜 한도에 걸리면 `effi local` (Ollama). API 키 없음.
 
 ```sh
-effi accounts init
-effi accounts threshold 80
-export ANTHROPIC_API_KEY_WORK=sk-ant-…   # docs/accounts.md 참고
-effi accounts meter work-primary 0
-effi                             # 임계 미만 계정 자동 선택
-
-effi local                       # 유료 한도 소진 시 Ollama 백엔드
+effi                  # 구독 / 플랜 로그인
+# … 사용량 한도 …
+effi local            # 무료 로컬 백엔드 (소형 모델용 MCP 차단)
 effi pick --task "대량 번역"
 effi run -t "번역" "…"
 ```
 
+**선택 — 다중 계정 / API 로테이션** (키가 있거나 프로필을 나눌 때만):
+
+```sh
+effi accounts init
+effi accounts threshold 80
+# api_key_env 내보내기  또는  계정별 oauth_profile config_dir
+effi accounts meter work-primary 72
+effi                             # 임계 미만 계정 선택
+```
+
+자세한 내용: [`docs/accounts.md`](docs/accounts.md).
+
 > **약관:** 구독 OAuth를 제3 라우터/프록시에 넣지 마세요.  
-> 정직한 토글(`effi` ↔ `effi local`) 또는 API 키를 사용합니다.
+> 정직한 토글(`effi` ↔ `effi local`) 또는 공식 다중 로그인·API 설정을 쓰세요.
 
 ### 철학 (짧게)
 
