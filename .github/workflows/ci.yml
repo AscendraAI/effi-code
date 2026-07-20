@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests (routing)
+        run: python3 -m unittest discover -s tests -v
+      - name: CLI help smoke
+        run: |
+          chmod +x bin/*
+          export PATH="$PWD/bin:$PATH"
+          export PYTHONPATH="$PWD/lib"
+          effi help
+          effi route --compact "add rate limit middleware and unit tests"
+          effi route --compact "40 UI strings translate"
+          effi catalog status
+          effi doctor --json | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'version' in d"
