@@ -59,7 +59,7 @@ fi
 
 # 5) bin 실행 권한
 chmod +x bin/effi bin/effi-run bin/effi-pick bin/effi-new bin/effi-classify bin/effi-review \
-  bin/effi-route bin/effi-accounts bin/effi-catalog 2>/dev/null || true
+  bin/effi-route bin/effi-accounts bin/effi-catalog bin/effi-init bin/effi-doctor 2>/dev/null || true
 
 # 6) 사용자 config 안내
 say "다음: PATH + v4 설정"

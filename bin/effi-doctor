@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# effi-doctor — health check (toolkit, project, accounts, ollama, CLIs)
+#
+#   effi doctor
+#   effi doctor --json
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+JSON=0
+for a in "$@"; do
+  case "$a" in
+    --json|-j) JSON=1 ;;
+    -h|--help) echo "usage: effi doctor [--json]"; exit 0 ;;
+  esac
+done
+JSON="$JSON" python3 - <<'PY'
+import os, sys
+from effi_core import doctor, print_json, print_doctor
+
+rep = doctor()
+if os.environ.get("JSON") == "1":
+    print_json(rep)
+else:
+    print_doctor(rep)
+sys.exit(0 if rep.get("ok") else 1)
+PY

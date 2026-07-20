@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.1.0 — 2026-07-20
+
+Project name remains **effi-code**.
+
+### Added
+- `effi init` — wire any project (`tasks/`, `CLAUDE.md` link, `.effi-root`)
+- `effi doctor` — health check (catalog, CLIs, accounts, local pick)
+- `tests/test_route.py` — routing unit tests
+- Tasks now scaffold under **project root** (cwd / git root / `EFFI_PROJECT`), not the toolkit install path
+
+### Fixed
+- Using effi as a global toolkit no longer drops task folders inside the clone by default
+
 ## 4.0.0 — 2026-07-20
 
 Project name remains **effi-code**.

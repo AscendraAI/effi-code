@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# effi-init — wire current project for effi-code (tasks/ + CLAUDE.md)
+#
+#   effi init
+#   effi init --force     # relink CLAUDE.md
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+FORCE=0
+for a in "$@"; do
+  case "$a" in
+    --force|-f) FORCE=1 ;;
+    -h|--help) echo "usage: effi init [--force]"; exit 0 ;;
+  esac
+done
+FORCE="$FORCE" python3 - <<'PY'
+import os
+from effi_core import init_project, print_json
+
+r = init_project(force=os.environ.get("FORCE") == "1")
+print(f"✓ project: {r['project']}")
+print(f"  toolkit: {r['toolkit']}")
+for a in r["actions"]:
+    print(f"  · {a}")
+print("next: effi doctor · effi new <feature> \"goal\" · effi route \"…\"")
+PY

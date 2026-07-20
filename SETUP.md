@@ -40,19 +40,30 @@ ollama pull qwen2.5-coder:7b
 effi pick --task "번역"
 ```
 
-## 5. 일상
+## 5. 프로젝트에 연결 (v4.1)
+
+```bash
+cd /path/to/your-app
+effi init                 # tasks/ + CLAUDE.md → toolkit
+effi doctor
+effi new my-feature "목표"  # tasks/ 는 앱 루트에 생성
+```
+
+## 6. 일상
 
 ```bash
 effi route "할 일 설명"     # 모델 결정
 effi new my-feature "목표"
 effi                        # Claude 세션
 effi catalog status         # 2주 갱신 여부
+python3 -m unittest tests/test_route.py   # 툴킷 개발 시
 ```
 
 ## 검증 체크
 
+- [ ] `effi doctor` overall OK
 - [ ] `effi route "architecture redesign"` → opus
 - [ ] `effi route "translate strings"` → local
+- [ ] `effi new` 가 **앱 루트** `tasks/` 에 생성 (툴킷 clone 안)
 - [ ] `effi accounts threshold 80` 동작
 - [ ] `effi catalog status` stale=false
-- [ ] `CLAUDE.md` 프로젝트에 연결

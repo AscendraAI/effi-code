@@ -1,6 +1,6 @@
 # effi-code
 
-**v4 (`VERSION` 4.0.0) — Multi-provider, cost-minimal coding orchestration.**  
+**v4.1 (`VERSION` 4.1.0) — Multi-provider, cost-minimal coding orchestration.**  
 Route each task to the best of **Claude · Codex (OpenAI) · Gemini · Grok · Local**, rotate Claude accounts at a usage threshold you set, and keep a biweekly model catalog honest.
 
 Project name: **effi-code** (CLI: `effi`).
@@ -38,10 +38,13 @@ effi accounts init
 effi accounts threshold 80
 effi accounts meter work-primary 10
 
+# In any app repo
+cd /path/to/your-app
+effi init            # tasks/ + CLAUDE.md
+effi doctor
+effi new auth-rate "add rate-limit middleware + tests"
 effi                 # Claude cloud (auto account select)
-effi route "add rate-limit middleware + tests"
 effi route "landing page UI mockup"
-effi route "translate 40 UI strings"
 ```
 
 ## Routing examples
@@ -111,7 +114,7 @@ effi catalog bump
 | [`docs/domains.md`](docs/domains.md) | plan→deploy pipeline |
 | [`docs/why.md`](docs/why.md) | citations (2026-07) |
 | [`CLAUDE.md`](CLAUDE.md) | drop-in session rules |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.0.0) |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (`VERSION` 4.1.0) |
 
 ## Philosophy (evidence-backed)
 

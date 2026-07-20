@@ -78,7 +78,8 @@ case "$MODE" in
     fi
     ;;
   status)
-    echo "=== effi-code v4 ==="
+    echo "=== effi-code $(cat "$ROOT/VERSION" 2>/dev/null || echo '?') ==="
+    echo "project: $(python3 -c "import sys; sys.path.insert(0,'$ROOT/lib'); from effi_core import project_root; print(project_root())" 2>/dev/null || pwd)"
     "$BIN/effi-catalog" status 2>/dev/null || true
     echo
     if [ -f "$HOME/.config/effi/accounts.json" ]; then
@@ -109,40 +110,37 @@ case "$MODE" in
   new) exec "$BIN/effi-new" "$@" ;;
   classify) exec "$BIN/effi-classify" "$@" ;;
   review) exec "$BIN/effi-review" "$@" ;;
+  init) exec "$BIN/effi-init" "$@" ;;
+  doctor) exec "$BIN/effi-doctor" "$@" ;;
   help|-h|--help)
     cat <<'EOF'
-effi v4 — cost-aware multi-provider coding orchestrator
+effi — cost-aware multi-provider coding orchestrator (effi-code)
 
 Sessions
   effi [cloud]             Claude cloud (account auto-rotate if configured)
   effi local               Ollama local backend
   effi status              accounts + catalog + local
+  effi doctor              health check
+  effi init [--force]      wire current project (tasks/ + CLAUDE.md)
 
 Routing (Claude · Codex/OpenAI · Gemini · Grok · Local)
   effi route "task…"       best model for task (token-efficient)
-  effi route --json "…"
   effi pick [--task "…"]   RAM+task local model
   effi run [-t hint] "…"   local mechanical worker
 
-Accounts (Claude multi-account)
-  effi accounts init
-  effi accounts threshold 80
-  effi accounts meter <id> <0-100>
-  effi accounts select|list|status
+Accounts / catalog
+  effi accounts …
+  effi catalog …
 
-Catalog (update every ~14 days)
-  effi catalog status|show|research|bump
-
-Tasks
+Tasks (created under project root, not toolkit install)
   effi new <name> [goal]
   effi review -o tasks/…/workers/review
-  effi classify "…"
 
-Rules: ORCHESTRATION.md  Routing: ROUTING.md  Matrix: catalog/task-routing.json
+Rules: ORCHESTRATION.md  Matrix: catalog/task-routing.json
 EOF
     ;;
   *)
-    echo "usage: effi [cloud|local|status|route|accounts|catalog|pick|run|new|review|help]" >&2
+    echo "usage: effi [cloud|local|status|doctor|init|route|accounts|catalog|pick|run|new|review|help]" >&2
     exit 1
     ;;
 esac

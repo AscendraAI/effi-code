@@ -17,13 +17,46 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent  # effi-code install (toolkit)
 CATALOG_MODELS = ROOT / "catalog" / "models.json"
 CATALOG_ROUTING = ROOT / "catalog" / "task-routing.json"
 CONFIG_DIR = Path(os.path.expanduser("~/.config/effi"))
 DEFAULT_CONFIG = CONFIG_DIR / "config.json"
 DEFAULT_ACCOUNTS = CONFIG_DIR / "accounts.json"
 DEFAULT_STATE = CONFIG_DIR / "state.json"
+VERSION_FILE = ROOT / "VERSION"
+
+
+def toolkit_root() -> Path:
+    """Install location of effi-code (catalog, templates, lib)."""
+    return ROOT
+
+
+def project_root(start: Optional[Path] = None) -> Path:
+    """User project root for tasks/, CLAUDE.md.
+
+    Order: EFFI_PROJECT → nearest git root from cwd → cwd.
+    Never defaults to the toolkit install dir unless you are inside it.
+    """
+    env = os.environ.get("EFFI_PROJECT")
+    if env:
+        return Path(os.path.expanduser(env)).resolve()
+    cur = (start or Path.cwd()).resolve()
+    for p in [cur, *cur.parents]:
+        if (p / ".git").exists():
+            return p
+    return cur
+
+
+def tasks_dir(project: Optional[Path] = None) -> Path:
+    return (project or project_root()) / "tasks"
+
+
+def version() -> str:
+    try:
+        return VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "0.0.0"
 
 
 def _load_json(path: Path) -> Any:
@@ -643,8 +676,184 @@ def apply_account_env(account: dict) -> dict:
     return env
 
 
+# ── Project init ─────────────────────────────────────────────────────
+
+def init_project(project: Optional[Path] = None, force: bool = False) -> dict:
+    """Scaffold CLAUDE.md link + tasks/ in the user project."""
+    proj = project or project_root()
+    actions = []
+    tasks = proj / "tasks"
+    if not tasks.exists():
+        tasks.mkdir(parents=True)
+        (tasks / ".gitkeep").write_text("", encoding="utf-8")
+        actions.append(f"created {tasks}")
+    else:
+        actions.append(f"exists {tasks}")
+
+    claude_dst = proj / "CLAUDE.md"
+    claude_src = ROOT / "CLAUDE.md"
+    if claude_dst.exists() or claude_dst.is_symlink():
+        if force:
+            claude_dst.unlink()
+            claude_dst.symlink_to(claude_src)
+            actions.append(f"relinked CLAUDE.md → {claude_src}")
+        else:
+            actions.append("CLAUDE.md already present (use --force to relink)")
+    else:
+        try:
+            claude_dst.symlink_to(claude_src)
+            actions.append(f"linked CLAUDE.md → {claude_src}")
+        except OSError:
+            # fallback copy
+            claude_dst.write_text(claude_src.read_text(encoding="utf-8"), encoding="utf-8")
+            actions.append("copied CLAUDE.md (symlink failed)")
+
+    # optional pointer to full rules
+    pointer = proj / ".effi-root"
+    pointer.write_text(str(ROOT) + "\n", encoding="utf-8")
+    actions.append(f"wrote .effi-root → {ROOT}")
+
+    return {"project": str(proj), "toolkit": str(ROOT), "actions": actions}
+
+
+# ── Doctor ───────────────────────────────────────────────────────────
+
+def doctor() -> dict:
+    """Health check for toolkit, project, accounts, local runtime."""
+    checks = []
+    ok = True
+
+    def add(name: str, passed: bool, detail: str) -> None:
+        nonlocal ok
+        if not passed:
+            ok = False
+        checks.append({"name": name, "ok": passed, "detail": detail})
+
+    ver = version()
+    add("version", bool(ver), ver)
+    add("catalog", CATALOG_MODELS.is_file(), str(CATALOG_MODELS))
+    add("routing", CATALOG_ROUTING.is_file(), str(CATALOG_ROUTING))
+    add("templates", (ROOT / "templates" / "task.md").is_file(), str(ROOT / "templates"))
+
+    cat = load_catalog()
+    stale = catalog_is_stale(cat)
+    add("catalog_fresh", not stale, f"next_review_due={cat.get('next_review_due')} stale={stale}")
+
+    proj = project_root()
+    add("project_root", True, str(proj))
+    add("tasks_dir", True, str(tasks_dir(proj)))
+    add(
+        "project_claude",
+        (proj / "CLAUDE.md").exists(),
+        "ok" if (proj / "CLAUDE.md").exists() else "run: effi init",
+    )
+
+    # CLIs
+    def which(cmd: str) -> Optional[str]:
+        from shutil import which as w
+        return w(cmd)
+
+    for cmd in ("claude", "ollama"):
+        p = which(cmd)
+        add(f"cli:{cmd}", p is not None, p or "not found")
+
+    for cmd in ("codex", "gemini", "grok"):
+        p = which(cmd)
+        checks.append({"name": f"cli:{cmd}", "ok": True, "detail": p or "optional — not found"})
+
+    # Ollama (optional unless you rely on local / effi local)
+    cfg = load_config()
+    url = cfg["local"]["ollama_url"]
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=3) as r:
+            tags = json.load(r)
+        n = len(tags.get("models") or [])
+        checks.append({"name": "ollama", "ok": True, "detail": f"{url} models={n}"})
+    except Exception as e:
+        checks.append(
+            {
+                "name": "ollama",
+                "ok": True,  # soft — cloud-only users are fine
+                "detail": f"off ({e.__class__.__name__}) — needed for effi local / effi-run",
+            }
+        )
+
+    # Accounts
+    if DEFAULT_ACCOUNTS.exists():
+        accs = list_accounts()
+        thr = get_threshold()
+        enabled = [a for a in accs if a.get("enabled", True)]
+        under = [a for a in enabled if float(a.get("usage_percent") or 0) < thr]
+        # keys present?
+        keyed = 0
+        for a in enabled:
+            if a.get("type") == "api_key" and a.get("api_key_env") and os.environ.get(a["api_key_env"]):
+                keyed += 1
+            if a.get("type") == "oauth_profile" and a.get("config_dir"):
+                if Path(os.path.expanduser(a["config_dir"])).exists():
+                    keyed += 1
+        add(
+            "accounts",
+            len(enabled) > 0,
+            f"{len(enabled)} enabled, {len(under)} under {thr}%, {keyed} credentials resolvable",
+        )
+        if enabled and not under:
+            checks.append(
+                {
+                    "name": "accounts_capacity",
+                    "ok": False,
+                    "detail": f"all accounts ≥ {thr}% — meter/reset or raise threshold",
+                }
+            )
+            ok = False
+    else:
+        checks.append(
+            {
+                "name": "accounts",
+                "ok": True,
+                "detail": "not configured (optional) — effi accounts init",
+            }
+        )
+
+    # Local pick
+    try:
+        pick = pick_local()
+        add("local_pick", True, f"{pick['model']} budget={pick.get('budget_gb')}GB")
+    except Exception as e:
+        add("local_pick", False, str(e))
+
+    soft = {
+        "cli:codex",
+        "cli:gemini",
+        "cli:grok",
+        "ollama",
+        "accounts",  # optional
+        "project_claude",  # fixed by effi init
+    }
+    hard_ok = all(c["ok"] for c in checks if c["name"] not in soft)
+    return {
+        "ok": ok and hard_ok,
+        "version": ver,
+        "toolkit": str(ROOT),
+        "project": str(proj),
+        "checks": checks,
+    }
+
+
 # ── CLI helpers ──────────────────────────────────────────────────────
 
 def print_json(data: Any) -> None:
     json.dump(data, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
+
+
+def print_doctor(report: dict) -> None:
+    print(f"effi-code v{report.get('version')}  doctor")
+    print(f"toolkit: {report.get('toolkit')}")
+    print(f"project: {report.get('project')}")
+    print()
+    for c in report.get("checks") or []:
+        mark = "✅" if c.get("ok") else "❌"
+        print(f"{mark} {c['name']}: {c.get('detail')}")
+    print()
+    print("overall:", "OK" if report.get("ok") else "ISSUES — see ❌ above")
