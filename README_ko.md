@@ -1,7 +1,8 @@
 # effi-code
 
-**v4.2 — 멀티 프로바이더·최소 비용 코딩 오케스트레이션.**  
-업무마다 **Claude · Codex(OpenAI) · Gemini · Grok · Local** 중 최적을 고르고, Claude 사용량이 임계값을 넘으면 계정을 돌리며, 2주마다 모델 카탈로그를 갱신합니다.
+**v4.3 — 멀티 프로바이더 + 3모드 오케스트레이션.**  
+🚀 **Apex** (최고 성능) · 🛣 **Cruise** (성능+비용) · ☕ **Sip** (최소 비용).  
+언제든 `effi mode set …` 로 전환. 업무마다 Claude / Codex / Gemini / Grok / Local 중 최적 라우팅.
 
 [English](README.md) | **한국어**
 

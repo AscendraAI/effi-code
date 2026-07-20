@@ -1,13 +1,13 @@
 # effi-code
 
-**v4.2 (`VERSION` 4.2.1) — Multi-provider, cost-minimal coding orchestration.**  
-Route each task to the best of **Claude · Codex (OpenAI) · Gemini · Grok · Local**, rotate Claude accounts at a usage threshold you set, and keep a biweekly model catalog honest.
+**v4.3 (`VERSION` 4.3.0) — Multi-provider orchestration with 3 user modes.**  
+🚀 **Apex** · 🛣 **Cruise** · ☕ **Sip** — pick max performance, balanced thrift, or minimum cost anytime.
 
 Project name: **effi-code** (CLI: `effi`).
 
 **English** | [한국어](README_ko.md)
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml) ![Orchestration](https://img.shields.io/badge/orchestration-v4.2-green) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml) ![Orchestration](https://img.shields.io/badge/orchestration-v4.3-green) ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
 
 > Not a heavyweight framework. Files + small CLIs + a way of working.  
 > **Right model per task. Single writer. Clean-context verify. Cache-safe main thread.**
@@ -40,13 +40,28 @@ effi accounts meter work-primary 10
 
 # In any app repo
 cd /path/to/your-app
-effi init            # tasks/ + CLAUDE.md
+effi init
+effi mode ask        # 🚀 Apex · 🛣 Cruise · ☕ Sip
 effi doctor
+effi use "add rate-limit middleware + tests"
 effi new auth-rate "add rate-limit middleware + tests"
-effi use "add rate-limit middleware + tests"   # route + how to run
-effi log auth-rate DECISION "starting implement on sonnet"
-effi                 # Claude cloud (auto account select)
+effi                 # asks mode if unset; then Claude cloud
 ```
+
+### Modes
+
+| | | |
+|---|---|---|
+| 🚀 **Apex** | Max performance | Top models, no local primary, ignore usage threshold |
+| 🛣 **Cruise** | Balanced (default) | Domain matrix + escalate only when needed |
+| ☕ **Sip** | Min cost | Local/cheap first; Sonnet ceiling for hard bits |
+
+```bash
+effi mode set apex    # 1 / max / 풀파워
+effi mode set cruise  # 2 / balance
+effi mode set sip     # 3 / thrift / 알뜰
+```
+
 
 ## Routing examples
 

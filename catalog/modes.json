@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "default": "cruise",
+  "modes": {
+    "apex": {
+      "id": "apex",
+      "number": 1,
+      "name": "Apex",
+      "emoji": "🚀",
+      "tagline": "꼭대기에서 내려찍는다 — 사용량 무시, 최고 성능",
+      "aliases": ["1", "max", "peak", "full", "beast", "오버드라이브", "최고", "풀파워"],
+      "policy": {
+        "allow_local_primary": false,
+        "prefer_top_for_coding": true,
+        "default_coding_model": "claude-opus-4-8",
+        "default_coding_provider": "claude",
+        "architecture_model": "claude-opus-4-8",
+        "bulk_cloud_model": "claude-sonnet-5",
+        "bulk_cloud_provider": "claude",
+        "min_review": "clean_context",
+        "start_tier_floor": "mid",
+        "cascade": "top_first",
+        "account_rotation": "ignore_threshold"
+      },
+      "banner": "🚀 APEX — max intelligence, spend is not the bottleneck"
+    },
+    "cruise": {
+      "id": "cruise",
+      "number": 2,
+      "name": "Cruise",
+      "emoji": "🛣",
+      "tagline": "멀리 가는 순항 — 중상 성능 + 비용 절감",
+      "aliases": ["2", "balance", "hybrid", "smart", "default", "밸런스", "크루즈", "효율"],
+      "policy": {
+        "allow_local_primary": true,
+        "prefer_top_for_coding": false,
+        "min_review": "none",
+        "start_tier_floor": "local",
+        "cascade": "cheap_first",
+        "account_rotation": "respect_threshold"
+      },
+      "banner": "🛣 CRUISE — strong enough, thrifty by default (classic effi)"
+    },
+    "sip": {
+      "id": "sip",
+      "number": 3,
+      "name": "Sip",
+      "emoji": "☕",
+      "tagline": "한 모금씩 — 최소 비용으로 완수",
+      "aliases": ["3", "min", "thrift", "eco", "lean", "cheap", "알뜰", "절약", "최소"],
+      "policy": {
+        "allow_local_primary": true,
+        "prefer_local_for_grades": ["S", "M"],
+        "prefer_local_for_domains": ["bulk", "docs", "test", "refactor"],
+        "coding_ceiling_model": "claude-sonnet-5",
+        "coding_ceiling_provider": "claude",
+        "cheap_cloud_model": "claude-haiku-4-5",
+        "cheap_cloud_provider": "claude",
+        "min_review": "none",
+        "start_tier_floor": "local",
+        "cascade": "local_first",
+        "account_rotation": "respect_threshold",
+        "force_local_bulk": true
+      },
+      "banner": "☕ SIP — smallest bill that still ships"
+    }
+  }
+}

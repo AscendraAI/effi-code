@@ -1,8 +1,27 @@
-# 운영 규칙 (Orchestration) v4
+# 운영 규칙 (Orchestration) v4.3
 
 > 세션 규칙으로 물리세요 (`CLAUDE.md`). 매 작업 시작 시 읽습니다.  
-> 라우팅 매트릭스: `catalog/task-routing.json` · 모델 카탈로그: `catalog/models.json`  
+> 라우팅 매트릭스: `catalog/task-routing.json` · 모델: `catalog/models.json` · **모드: `catalog/modes.json`**  
 > 근거: `docs/why.md` · 계정: `effi accounts` · 비용: `ROUTING.md`
+
+## 3 모드 (언제든 전환)
+
+세션 시작(`effi` / `effi cloud`) 시 **모드가 없으면 물어본다.** 사용 중 전환:
+
+```bash
+effi mode set apex     # 또는 1 / max / 풀파워
+effi mode set cruise   # 또는 2 / balance
+effi mode set sip      # 또는 3 / thrift / 알뜰
+effi mode ask          # 메뉴로 다시 고르기
+```
+
+| 모드 | 이름 | 한 줄 | 라우팅 성격 |
+|---|---|---|---|
+| **1** | 🚀 **Apex** | 꼭대기에서 내려찍는다 | 최고 모델 중심, **로컬 primary 금지**, 쿼터 임계 무시 |
+| **2** | 🛣 **Cruise** | 멀리 가는 순항 | 중상 성능 + 비용 절감 (기본 effi) |
+| **3** | ☕ **Sip** | 한 모금씩 | 로컬/cheap 우선, 완수 가능한 최소 비용 |
+
+오케스트레이터(클로드)는 사용자 말이 “풀파워로 / 아껴서 / 알뜰 모드”면 **즉시 `effi mode set …`를 제안·실행**하고 log에 `[MODE]`를 남긴다.
 
 ## 원칙 (2026 증거)
 

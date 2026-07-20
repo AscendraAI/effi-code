@@ -16,6 +16,11 @@ from effi_core import (
     launch_plan,
     append_task_log,
     tasks_dir,
+    resolve_mode_id,
+    apply_mode_policy,
+    get_mode,
+    set_mode,
+    load_state,
 )
 import tempfile
 from pathlib import Path
@@ -98,6 +103,35 @@ class RouteTests(unittest.TestCase):
                 self.assertIn("hello", body)
             finally:
                 os.environ.pop("EFFI_PROJECT", None)
+
+    def test_mode_aliases(self):
+        self.assertEqual(resolve_mode_id("1"), "apex")
+        self.assertEqual(resolve_mode_id("max"), "apex")
+        self.assertEqual(resolve_mode_id("2"), "cruise")
+        self.assertEqual(resolve_mode_id("thrift"), "sip")
+        self.assertEqual(resolve_mode_id("알뜰"), "sip")
+
+    def test_apex_no_local_primary(self):
+        r = recommend("40개 UI 문자열 한국어 번역", mode="apex")
+        self.assertEqual(r["mode"], "apex")
+        self.assertNotEqual(r["primary_provider"], "local")
+        self.assertEqual(r["start_tier"], "top")
+
+    def test_apex_coding_opus(self):
+        r = recommend("add rate limit middleware and unit tests", mode="apex")
+        self.assertEqual(r["primary_provider"], "claude")
+        self.assertIn("opus", r["primary_model"])
+
+    def test_sip_bulk_local(self):
+        r = recommend("40개 UI 문자열 한국어 번역", mode="sip")
+        self.assertEqual(r["mode"], "sip")
+        self.assertEqual(r["primary_provider"], "local")
+
+    def test_cruise_default_matrix(self):
+        r = recommend("add rate limit middleware and unit tests", mode="cruise")
+        self.assertEqual(r["mode"], "cruise")
+        self.assertEqual(r["primary_provider"], "claude")
+        self.assertIn("sonnet", r["primary_model"])
 
 
 if __name__ == "__main__":

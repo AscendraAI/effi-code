@@ -20,6 +20,7 @@ from typing import Any, Optional
 ROOT = Path(__file__).resolve().parent.parent  # effi-code install (toolkit)
 CATALOG_MODELS = ROOT / "catalog" / "models.json"
 CATALOG_ROUTING = ROOT / "catalog" / "task-routing.json"
+CATALOG_MODES = ROOT / "catalog" / "modes.json"
 CONFIG_DIR = Path(os.path.expanduser("~/.config/effi"))
 DEFAULT_CONFIG = CONFIG_DIR / "config.json"
 DEFAULT_ACCOUNTS = CONFIG_DIR / "accounts.json"
@@ -83,6 +84,286 @@ def load_catalog() -> dict:
 
 def load_routing() -> dict:
     return _load_json(CATALOG_ROUTING)
+
+
+def load_modes_catalog() -> dict:
+    return _load_json(CATALOG_MODES)
+
+
+# ── Orchestration modes (Apex / Cruise / Sip) ───────────────────────
+
+def _modes_map() -> dict:
+    return load_modes_catalog().get("modes") or {}
+
+
+def resolve_mode_id(token: str) -> str:
+    """Map user input (name, number, alias) → mode id."""
+    t = (token or "").strip().lower()
+    if not t:
+        raise ValueError("empty mode")
+    modes = _modes_map()
+    if t in modes:
+        return t
+    for mid, m in modes.items():
+        if str(m.get("number")) == t:
+            return mid
+        name = (m.get("name") or "").lower()
+        if t == name:
+            return mid
+        for a in m.get("aliases") or []:
+            if t == str(a).lower():
+                return mid
+    raise KeyError(
+        f"unknown mode: {token!r} — try apex|cruise|sip (or 1|2|3)"
+    )
+
+
+def get_mode(mode_id: Optional[str] = None) -> dict:
+    """Return full mode dict. Resolves EFFI_MODE → state → default."""
+    modes_cat = load_modes_catalog()
+    modes = modes_cat.get("modes") or {}
+    mid = mode_id
+    if not mid:
+        mid = os.environ.get("EFFI_MODE") or None
+    if not mid:
+        st = load_state()
+        mid = st.get("mode") or None
+    if not mid:
+        mid = modes_cat.get("default") or "cruise"
+    if mid not in modes:
+        try:
+            mid = resolve_mode_id(str(mid))
+        except KeyError:
+            mid = "cruise"
+    m = dict(modes[mid])
+    m["id"] = mid
+    return m
+
+
+def set_mode(token: str) -> dict:
+    mid = resolve_mode_id(token)
+    st = load_state()
+    prev = st.get("mode")
+    st["mode"] = mid
+    st["mode_set_at"] = datetime.now().isoformat(timespec="minutes")
+    st.setdefault("mode_history", []).append(
+        {
+            "at": st["mode_set_at"],
+            "from": prev,
+            "to": mid,
+        }
+    )
+    st["mode_history"] = st["mode_history"][-30:]
+    save_state(st)
+    # also mirror into config for visibility
+    cfg = load_config()
+    cfg["mode"] = mid
+    _save_json(DEFAULT_CONFIG, cfg)
+    return get_mode(mid)
+
+
+def mode_is_set() -> bool:
+    if os.environ.get("EFFI_MODE"):
+        return True
+    st = load_state()
+    return bool(st.get("mode"))
+
+
+def list_modes() -> list[dict]:
+    modes = _modes_map()
+    cur = get_mode().get("id")
+    out = []
+    for mid in ("apex", "cruise", "sip"):
+        if mid not in modes:
+            continue
+        m = dict(modes[mid])
+        m["id"] = mid
+        m["active"] = mid == cur
+        out.append(m)
+    return out
+
+
+def print_mode_menu(stream=None) -> None:
+    stream = stream or sys.stderr
+    cur = get_mode().get("id") if mode_is_set() else None
+    stream.write("\n effi-code · pick your orchestration mode\n")
+    stream.write(" ─────────────────────────────────────\n")
+    for m in list_modes():
+        mark = "→" if m["id"] == cur else " "
+        stream.write(
+            f"  {mark} [{m['number']}] {m.get('emoji','')} {m['name']:7}  — {m.get('tagline')}\n"
+        )
+    stream.write(" ─────────────────────────────────────\n")
+    stream.write("  choose 1/2/3 or apex/cruise/sip  (Enter = Cruise)\n\n")
+
+
+def ensure_mode(interactive: bool = True) -> dict:
+    """Return active mode; if unset and interactive TTY, ask once."""
+    if mode_is_set():
+        return get_mode()
+    if interactive and sys.stdin.isatty() and sys.stderr.isatty():
+        print_mode_menu()
+        try:
+            sys.stderr.write("mode> ")
+            sys.stderr.flush()
+            line = sys.stdin.readline()
+        except EOFError:
+            line = ""
+        choice = (line or "").strip() or "cruise"
+        try:
+            return set_mode(choice)
+        except KeyError as e:
+            sys.stderr.write(f"  ! {e} — defaulting to Cruise\n")
+            return set_mode("cruise")
+    # non-interactive: Cruise default, do not persist unless asked
+    return get_mode("cruise")
+
+
+def apply_mode_policy(rec: dict, mode: Optional[dict] = None, cfg: Optional[dict] = None) -> dict:
+    """Adjust a base recommendation according to Apex/Cruise/Sip policy."""
+    mode = mode or get_mode()
+    cfg = cfg or load_config()
+    mid = mode.get("id") or "cruise"
+    pol = mode.get("policy") or {}
+    domain = rec.get("domain") or "implement"
+    grade = rec.get("grade") or "M"
+    why_extra = []
+
+    if mid == "apex":
+        # Never local as primary
+        if rec.get("primary_provider") == "local" or not pol.get("allow_local_primary", True):
+            if domain in ("bulk", "docs"):
+                rec["primary_provider"] = pol.get("bulk_cloud_provider", "claude")
+                rec["primary_model"] = pol.get("bulk_cloud_model", "claude-sonnet-5")
+                why_extra.append("Apex: cloud over local for bulk")
+            else:
+                rec["primary_provider"] = pol.get("default_coding_provider", "claude")
+                rec["primary_model"] = pol.get("default_coding_model", "claude-opus-4-8")
+                why_extra.append("Apex: top coding model")
+        if pol.get("prefer_top_for_coding") and domain in (
+            "implement",
+            "implement_hard",
+            "debug",
+            "refactor",
+            "test",
+            "deploy",
+            "orchestrate",
+            "plan",
+            "architecture",
+            "security",
+            "review",
+        ):
+            if domain in ("architecture", "plan", "security", "implement_hard", "orchestrate"):
+                rec["primary_provider"] = "claude"
+                rec["primary_model"] = pol.get("architecture_model", "claude-opus-4-8")
+            elif domain != "design":  # design may stay gemini
+                if rec.get("primary_provider") in ("claude", "openai", "grok", "local"):
+                    rec["primary_provider"] = pol.get("default_coding_provider", "claude")
+                    rec["primary_model"] = pol.get("default_coding_model", "claude-opus-4-8")
+            why_extra.append("Apex: performance-first routing")
+        # floor review
+        min_rev = pol.get("min_review") or "clean_context"
+        if rec.get("review") == "none" or (
+            min_rev == "clean_context"
+            and rec.get("review") == "none"
+        ):
+            rec["review"] = "clean_context"
+        if grade in ("L", "XL") or domain in ("security", "architecture"):
+            rec["review"] = "clean_context+integration"
+        rec["start_tier"] = "top"
+        # demote local to non-suggestion in apex (still show if present but mark avoided)
+        if rec.get("local"):
+            rec["local"]["suggestion_only"] = True
+            rec["local"]["apex_discouraged"] = True
+        rec["estimated_relative_cost"] = "high"
+        rec["cascade"] = pol.get("cascade", "top_first")
+
+    elif mid == "sip":
+        prefer_domains = set(pol.get("prefer_local_for_domains") or [])
+        prefer_grades = set(pol.get("prefer_local_for_grades") or [])
+        force_local = (
+            domain in prefer_domains
+            or grade in prefer_grades
+            or (pol.get("force_local_bulk") and domain == "bulk")
+        )
+        # security still needs real cloud judgment
+        if domain == "security":
+            rec["primary_provider"] = "claude"
+            rec["primary_model"] = "claude-sonnet-5"
+            rec["start_tier"] = "mid"
+            why_extra.append("Sip: security floor = sonnet (not local)")
+        elif domain in ("architecture", "plan") and grade in ("L", "XL"):
+            rec["primary_provider"] = pol.get("coding_ceiling_provider", "claude")
+            rec["primary_model"] = pol.get("coding_ceiling_model", "claude-sonnet-5")
+            rec["start_tier"] = "mid"
+            why_extra.append("Sip: hard design stays mid ceiling, not opus")
+        elif force_local and pol.get("allow_local_primary", True):
+            roles = ["boilerplate", "translate", "docstring", "format"]
+            if domain in ("test", "refactor", "implement"):
+                roles = ["implement_narrow", "scaffold", "boilerplate"]
+            loc = pick_local(roles, cfg)
+            rec["primary_provider"] = "local"
+            rec["primary_model"] = loc["model"]
+            rec["local"] = loc
+            rec["start_tier"] = "local"
+            rec["estimated_relative_cost"] = "free"
+            why_extra.append("Sip: local-first cost save")
+        else:
+            # cheap cloud ceiling
+            if rec.get("primary_provider") == "claude" and "opus" in (
+                rec.get("primary_model") or ""
+            ):
+                rec["primary_model"] = pol.get(
+                    "coding_ceiling_model", "claude-sonnet-5"
+                )
+                why_extra.append("Sip: cap at sonnet")
+            if grade == "S" and domain not in ("security",):
+                rec["primary_provider"] = pol.get("cheap_cloud_provider", "claude")
+                rec["primary_model"] = pol.get("cheap_cloud_model", "claude-haiku-4-5")
+                rec["start_tier"] = "cheap"
+                why_extra.append("Sip: haiku for simple work")
+            elif rec.get("start_tier") == "top":
+                rec["start_tier"] = "mid"
+        rec["cascade"] = pol.get("cascade", "local_first")
+        # lighter review for S
+        if grade == "S" and domain not in ("security",):
+            rec["review"] = "none"
+
+    else:
+        # cruise — base matrix already applied
+        rec["cascade"] = pol.get("cascade", "cheap_first")
+        why_extra.append("Cruise: balanced matrix default")
+
+    # annotate
+    rec["mode"] = mid
+    rec["mode_name"] = mode.get("name")
+    rec["mode_emoji"] = mode.get("emoji")
+    if why_extra:
+        base_why = rec.get("why") or ""
+        rec["why"] = (base_why + " · " if base_why else "") + "; ".join(why_extra)
+
+    # recompute cost label if provider/model changed
+    try:
+        catalog = load_catalog()
+        tier = _tier_of(rec["primary_provider"], rec["primary_model"], catalog)
+        if rec["primary_provider"] == "local":
+            rec["estimated_relative_cost"] = "free"
+            rec["start_tier"] = rec.get("start_tier") or "local"
+        else:
+            rec["estimated_relative_cost"] = _relative_cost(tier)
+            if mid == "apex":
+                rec["start_tier"] = "top"
+            elif mid != "sip":
+                rec["start_tier"] = {
+                    "cheap": "cheap",
+                    "mid": "mid",
+                    "top": "top",
+                    "ultra": "top",
+                }.get(tier, rec.get("start_tier") or "mid")
+    except Exception:
+        pass
+
+    return rec
 
 
 def load_config() -> dict:
@@ -356,12 +637,18 @@ def _relative_cost(tier: str) -> str:
     }.get(tier, "mid")
 
 
-def recommend(text: str, prefer_local: bool = False, cfg: Optional[dict] = None) -> dict:
+def recommend(
+    text: str,
+    prefer_local: bool = False,
+    cfg: Optional[dict] = None,
+    mode: Optional[str] = None,
+) -> dict:
     cfg = cfg or load_config()
     catalog = load_catalog()
     routing = load_routing()
     cls = classify_domain(text)
     d = cls["domain_spec"]
+    mode_obj = get_mode(mode) if mode else get_mode()
 
     primary = dict(d.get("primary") or {})
     if prefer_local or primary.get("provider") == "local":
@@ -439,19 +726,24 @@ def recommend(text: str, prefer_local: bool = False, cfg: Optional[dict] = None)
     out["parallel"] = d.get("parallel")
     out["approval"] = d.get("approval")
     out["rules"] = d.get("rules") or []
+    # Mode policy last (Apex / Cruise / Sip)
+    out = apply_mode_policy(out, mode=mode_obj, cfg=cfg)
     return out
 
 
 def format_route(rec: dict, compact: bool = False) -> str:
     lines = []
+    mode_bit = ""
+    if rec.get("mode"):
+        mode_bit = f"  mode={rec.get('mode_emoji','')}{rec.get('mode_name') or rec['mode']}"
     if not compact:
         lines.append(
             f"# ROUTING  domain={rec['domain']} ({rec.get('label')})  "
-            f"grade={rec['grade']}  conf={rec['confidence']}"
+            f"grade={rec['grade']}  conf={rec['confidence']}{mode_bit}"
         )
     lines.append(
         f"primary: {rec['primary_provider']}/{rec['primary_model']}  "
-        f"cost≈{rec['estimated_relative_cost']}  tier={rec['start_tier']}"
+        f"cost≈{rec['estimated_relative_cost']}  tier={rec['start_tier']}{mode_bit if compact else ''}"
     )
     if rec.get("why"):
         lines.append(f"why: {rec['why']}")
@@ -552,7 +844,7 @@ def save_accounts(data: dict) -> None:
 def load_state() -> dict:
     if DEFAULT_STATE.exists():
         return _load_json(DEFAULT_STATE)
-    return {"active_account_id": None, "history": []}
+    return {"active_account_id": None, "history": [], "mode": None}
 
 
 def save_state(state: dict) -> None:
@@ -604,19 +896,38 @@ def set_meter(account_id: str, percent: float) -> dict:
 
 
 def select_account(force_id: Optional[str] = None) -> dict:
-    """Pick active Claude account under usage threshold; rotate if needed."""
+    """Pick active Claude account under usage threshold; rotate if needed.
+
+    Apex mode ignores usage threshold (performance over quota).
+    """
     data = load_accounts()
     accounts = [a for a in (data.get("accounts") or []) if a.get("enabled", True)]
     accounts = [a for a in accounts if a.get("provider", "claude") == "claude"]
     accounts.sort(key=lambda a: a.get("priority", 99))
     thr = get_threshold()
     state = load_state()
+    mode = get_mode()
+    ignore_thr = (mode.get("policy") or {}).get("account_rotation") == "ignore_threshold"
 
     if force_id:
         for a in accounts:
             if a["id"] == force_id:
                 return _activate(a, state, reason="forced")
         raise KeyError(force_id)
+
+    if not accounts:
+        return {
+            "account": None,
+            "switched": False,
+            "threshold": thr,
+            "reason": "no_accounts",
+            "hint": f"Copy config/accounts.example.json → {DEFAULT_ACCOUNTS}",
+        }
+
+    # Apex: always highest-priority account (quota is not the gate)
+    if ignore_thr:
+        a = accounts[0]
+        return _activate(a, state, reason="apex_ignore_threshold")
 
     # Prefer current if under threshold
     cur = state.get("active_account_id")
@@ -632,17 +943,8 @@ def select_account(force_id: Optional[str] = None) -> dict:
             return _activate(a, state, reason="under_threshold" if switched else "active_ok")
 
     # All over — pick lowest usage
-    if not accounts:
-        return {
-            "account": None,
-            "switched": False,
-            "threshold": thr,
-            "reason": "no_accounts",
-            "hint": f"Copy config/accounts.example.json → {DEFAULT_ACCOUNTS}",
-        }
     a = min(accounts, key=lambda x: float(x.get("usage_percent") or 0))
     return _activate(a, state, reason="all_over_threshold_lowest")
-
 
 def _activate(account: dict, state: dict, reason: str) -> dict:
     prev = state.get("active_account_id")
@@ -754,7 +1056,18 @@ def doctor() -> dict:
     add("version", bool(ver), ver)
     add("catalog", CATALOG_MODELS.is_file(), str(CATALOG_MODELS))
     add("routing", CATALOG_ROUTING.is_file(), str(CATALOG_ROUTING))
+    add("modes", CATALOG_MODES.is_file(), str(CATALOG_MODES))
     add("templates", (ROOT / "templates" / "task.md").is_file(), str(ROOT / "templates"))
+    try:
+        m = get_mode()
+        add(
+            "mode",
+            True,
+            f"{m.get('emoji','')} {m.get('name')} ({m.get('id')})"
+            + ("" if mode_is_set() else " [default]"),
+        )
+    except Exception as e:
+        add("mode", False, str(e))
 
     cat = load_catalog()
     stale = catalog_is_stale(cat)

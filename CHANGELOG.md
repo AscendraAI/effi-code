@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.3.0 — 2026-07-21
+
+### Added
+- **3 orchestration modes** (user-selectable anytime):
+  - 🚀 **Apex** — max performance, no local primary, ignore quota threshold
+  - 🛣 **Cruise** — performance + cost balance (classic effi)
+  - ☕ **Sip** — minimum cost, local/cheap first
+- `effi mode` / `effi mode set` / `effi mode ask`
+- `catalog/modes.json` · mode-aware `effi route`
+- Session start asks for mode if unset (`effi cloud`)
+
 ## 4.2.1 — 2026-07-21
 
 ### Added

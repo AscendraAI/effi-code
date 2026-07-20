@@ -1,8 +1,17 @@
-# 라우팅 & 비용 규율 v4
+# 라우팅 & 비용 규율 v4.3
 
-**성능은 필요한 곳에, 절감은 필요 없는 곳에서. 태스크마다 최적 모델.**
+**성능은 필요한 곳에, 절감은 필요 없는 곳에서. 태스크마다 최적 모델.**  
+**활성 모드(Apex/Cruise/Sip)가 매트릭스 위에 정책을 덮어쓴다.**
 
-실행기: `effi route "…"`. 매트릭스: `catalog/task-routing.json`. 모델: `catalog/models.json`.
+실행기: `effi route "…"`. 매트릭스: `catalog/task-routing.json`. 모드: `catalog/modes.json`.
+
+## 모드가 라우팅을 바꾸는 방식
+
+| 모드 | primary 경향 | 로컬 | 캐스케이드 | 계정 |
+|---|---|---|---|---|
+| 🚀 Apex | Opus급 코딩, 설계·보안 최상 | primary 금지 | top first | 임계 무시 |
+| 🛣 Cruise | 도메인 매트릭스 그대로 | bulk 등 허용 | cheap→mid→top | 임계 준수 |
+| ☕ Sip | 로컬/Haiku 우선, Sonnet 천장 | S/M·bulk 적극 | local first | 임계 준수 |
 
 ## 프로바이더 맵 (2026-07 카탈로그)
 

@@ -69,6 +69,16 @@ case "$MODE" in
   cloud)
     # clear local overrides
     unset ANTHROPIC_BASE_URL ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL 2>/dev/null || true
+    # Mode: ask once if unset (TTY), then banner
+    python3 - <<'PY'
+from effi_core import ensure_mode, get_mode, mode_is_set
+m = ensure_mode(interactive=True)
+print(f"▶ {m.get('emoji','')} {m['name'].upper()} · {m.get('banner')}")
+if not mode_is_set():
+    print("  (ephemeral default — pin with: effi mode set cruise)")
+else:
+    print("  switch anytime: effi mode set apex|cruise|sip")
+PY
     apply_cloud_account
     echo "▶ CLOUD · rules: ORCHESTRATION.md + catalog routing"
     if command -v claude >/dev/null 2>&1; then
@@ -80,6 +90,7 @@ case "$MODE" in
   status)
     echo "=== effi-code $(cat "$ROOT/VERSION" 2>/dev/null || echo '?') ==="
     echo "project: $(python3 -c "import sys; sys.path.insert(0,'$ROOT/lib'); from effi_core import project_root; print(project_root())" 2>/dev/null || pwd)"
+    python3 -c "import sys; sys.path.insert(0,'$ROOT/lib'); from effi_core import get_mode, mode_is_set; m=get_mode(); print(f\"mode: {m.get('emoji','')} {m['name']} ({m['id']})\" + ('' if mode_is_set() else ' [default]'))" 2>/dev/null || true
     "$BIN/effi-catalog" status 2>/dev/null || true
     echo
     if [ -f "$HOME/.config/effi/accounts.json" ]; then
@@ -100,7 +111,7 @@ case "$MODE" in
     else
       echo "Ollama: ❌ off"
     fi
-    echo "orchestration: v4 multi-provider · single-writer · clean-context verify"
+    echo "orchestration: multi-provider · single-writer · clean-context verify · 3 modes"
     ;;
   route|recommend) exec "$BIN/effi-route" "$@" ;;
   accounts|account) exec "$BIN/effi-accounts" "$@" ;;
@@ -114,37 +125,36 @@ case "$MODE" in
   doctor) exec "$BIN/effi-doctor" "$@" ;;
   use) exec "$BIN/effi-use" "$@" ;;
   log) exec "$BIN/effi-log" "$@" ;;
+  mode) exec "$BIN/effi-mode" "$@" ;;
   help|-h|--help)
     cat <<'EOF'
 effi — cost-aware multi-provider coding orchestrator (effi-code)
 
+Modes (pick anytime)
+  🚀 Apex    [1]  max performance — ignore quota, no local primary
+  🛣 Cruise  [2]  performance + cost (default effi balance)
+  ☕ Sip     [3]  minimum cost — local/cheap first
+  effi mode              show / menu
+  effi mode set apex     pin mode (aliases: 1, max, 풀파워…)
+  effi mode ask          interactive picker
+
 Sessions
-  effi [cloud]             Claude cloud (account auto-rotate if configured)
+  effi [cloud]             Claude cloud (asks mode if unset)
   effi local               Ollama local backend
-  effi status              accounts + catalog + local
-  effi doctor              health check
-  effi init [--force]      wire current project (tasks/ + CLAUDE.md)
+  effi status · doctor · init
 
-Routing (Claude · Codex/OpenAI · Gemini · Grok · Local)
-  effi route "task…"       best model for task
-  effi use "task…"         route + how to run ( --exec for claude )
-  effi pick [--task "…"]   RAM+task local model
-  effi run [-t hint] "…"   local mechanical worker
+Routing
+  effi route|use "task…"   model pick (respects active mode)
+  effi pick · run · …
 
-Accounts / catalog
-  effi accounts …
-  effi catalog …
+Accounts / catalog / tasks
+  effi accounts … · catalog … · new … · log … · review …
 
-Tasks (under project root)
-  effi new <name> [goal]
-  effi log <name> <TAG> <msg>
-  effi review -o tasks/…/workers/review
-
-Rules: ORCHESTRATION.md  Matrix: catalog/task-routing.json
+Rules: ORCHESTRATION.md  Modes: catalog/modes.json
 EOF
     ;;
   *)
-    echo "usage: effi [cloud|local|status|doctor|init|route|use|log|accounts|catalog|pick|run|new|review|help]" >&2
+    echo "usage: effi [cloud|local|mode|status|doctor|init|route|use|log|accounts|catalog|pick|run|new|review|help]" >&2
     exit 1
     ;;
 esac

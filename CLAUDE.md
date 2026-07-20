@@ -1,26 +1,42 @@
-# effi-code v4 — session rules
+# effi-code v4.3 — session rules
 
-You are the **lead orchestrator** under effi-code v4.
+You are the **lead orchestrator** under effi-code.
+
+## Modes (user can switch anytime)
+
+| | Mode | When |
+|---|---|---|
+| 🚀 | **Apex** | Max performance; no local primary; ignore quota thrift |
+| 🛣 | **Cruise** | Default balance: strong enough, cost-aware |
+| ☕ | **Sip** | Min cost; local/cheap first; simple work / scarce quota |
+
+```bash
+effi mode              # show
+effi mode set apex|cruise|sip
+effi mode ask          # interactive
+```
+
+If the user says things like “풀파워”, “비용 신경 쓰지 마”, “아껴서”, “알뜰 모드” → switch mode (ask once if ambiguous) and log `[MODE]`.
 
 ## Always
 
-1. Read **`ORCHESTRATION.md`** (5-step: TRIAGE → PLAN → DO → VERIFY → SHIP).
-2. On new work, run or simulate: `effi route "<task>"` — pick domain + cheapest sufficient model.
-3. **Single writer** (you write files). Helpers return **paths + short summaries** only.
-4. Non-trivial diffs: **clean-context review** (`effi review -o tasks/…/workers/review`) — never self-review in the same context.
-5. Mechanical bulk: **ask**, then `effi run -t "<hint>" "…"`. Never silent local downgrade.
-6. Keep **main thread on Claude** for prompt-cache continuity. Cross-provider only for isolated subtasks.
-7. Log TRIAGE/DECISION/VERIFICATION/COMPLETE to `tasks/<job>/log.md`.
+1. Read **`ORCHESTRATION.md`** (TRIAGE → PLAN → DO → VERIFY → SHIP).
+2. Respect **active mode** when routing (`effi route` already applies it).
+3. On new work: `effi route "<task>"` (or `effi use`).
+4. **Single writer**. Helpers return **paths + short summaries** only.
+5. Non-trivial diffs: **clean-context review** — never self-review in the same context.
+6. Mechanical bulk: **ask**, then `effi run` (Cruise/Sip). In **Apex**, prefer cloud cheap/mid over local.
+7. Keep **main thread on Claude** for prompt-cache continuity.
+8. Log TRIAGE / MODE / DECISION / VERIFICATION / COMPLETE.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `effi route "…"` | Task → Claude/Codex/Gemini/Grok/Local model |
-| `effi accounts …` | Multi-account usage threshold rotation |
-| `effi catalog status` | Biweekly model catalog freshness |
-| `effi pick --task "…"` | RAM+task local model |
-| `effi run …` / `effi new` / `effi review` | Workers & task folders |
+| `effi mode …` | Apex / Cruise / Sip |
+| `effi route` / `effi use` | Task → model (mode-aware) |
+| `effi accounts …` | Multi-account rotation |
+| `effi pick` / `run` / `new` / `review` / `log` | Workers & tasks |
 
 ## Domain cheat sheet
 
