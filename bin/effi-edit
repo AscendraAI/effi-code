@@ -24,6 +24,8 @@ FILE=""
 INSTRUCTION=""
 
 usage() {
+  # $1 = exit code (0 for --help, 1 for misuse). CI treats --help as success.
+  local code="${1:-1}"
   cat <<'EOF' >&2
 usage: effi-edit [opts] <file> "instruction"
        effi-edit --apply-only <file>
@@ -42,7 +44,7 @@ safety:
   Files over the char budget are refused (no quiet truncation).
   Review the diff, then:  effi-edit --apply-only <file>
 EOF
-  exit 1
+  exit "$code"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -51,14 +53,14 @@ while [ "$#" -gt 0 ]; do
     --apply) APPLY=1; shift ;;
     --apply-only) APPLY_ONLY=1; shift ;;
     --max-chars) MAX_CHARS="$2"; shift 2 ;;
-    -h|--help) usage ;;
+    -h|--help) usage 0 ;;
     --) shift; break ;;
-    -*) echo "unknown: $1" >&2; usage ;;
+    -*) echo "unknown: $1" >&2; usage 1 ;;
     *) break ;;
   esac
 done
 
-if [ "$#" -lt 1 ]; then usage; fi
+if [ "$#" -lt 1 ]; then usage 1; fi
 FILE="$1"; shift
 
 if [ "$APPLY_ONLY" -eq 1 ]; then
@@ -91,7 +93,7 @@ if [ "$#" -gt 0 ]; then
 else
   INSTRUCTION="$(cat)"
 fi
-[ -n "${INSTRUCTION:-}" ] || usage
+[ -n "${INSTRUCTION:-}" ] || usage 1
 [ -f "$FILE" ] || { echo "no file: $FILE" >&2; exit 1; }
 
 if [ -z "$MODEL" ]; then

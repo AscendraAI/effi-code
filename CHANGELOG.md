@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.4.4 — 2026-07-21
+
+### Fixed
+- CI smoke: `effi-edit --help` now exits 0 (was 1, which failed the badge after v4.4.0)
+
 ## 4.4.3 — 2026-07-21
 
 ### Added
