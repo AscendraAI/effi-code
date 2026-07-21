@@ -207,6 +207,41 @@ class RouteTests(unittest.TestCase):
             finally:
                 os.environ.pop("EFFI_PROJECT", None)
 
+    def test_routing_models_exist_in_catalog(self):
+        """Every routed model ID (except local AUTO) must exist in models.json."""
+        from effi_core import load_catalog, load_routing
+
+        cat = load_catalog()
+        rt = load_routing()
+        missing = []
+        for d, spec in rt["domains"].items():
+            for key in ("primary", "escalate", "security_upgrade"):
+                p = spec.get(key) or {}
+                if not p:
+                    continue
+                prov, model = p.get("provider"), p.get("model")
+                if not prov or not model or model == "AUTO":
+                    continue
+                models = (cat.get("providers") or {}).get(prov, {}).get("models") or {}
+                if model not in models:
+                    missing.append(f"{d}.{key}: {prov}/{model}")
+            for alt in spec.get("alternates") or []:
+                prov, model = alt.get("provider"), alt.get("model")
+                if not model or model == "AUTO":
+                    continue
+                models = (cat.get("providers") or {}).get(prov, {}).get("models") or {}
+                if model not in models:
+                    missing.append(f"{d}.alt: {prov}/{model}")
+        self.assertEqual(missing, [], msg=f"orphan routing refs: {missing}")
+
+    def test_catalog_freshness_fields(self):
+        from effi_core import load_catalog
+
+        cat = load_catalog()
+        self.assertIn("last_verified_at", cat)
+        self.assertIn("next_review_due", cat)
+        self.assertEqual(cat.get("updated_at"), cat.get("last_verified_at"))
+
 
 if __name__ == "__main__":
     unittest.main()

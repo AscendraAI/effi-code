@@ -24,17 +24,28 @@ PY
 import json
 from effi_core import load_catalog, load_routing
 cat = load_catalog()
-print(f"version: {cat.get('catalog_version')}  updated: {cat.get('updated_at')}  next: {cat.get('next_review_due')}")
+print(
+    f"version: {cat.get('catalog_version')}  updated: {cat.get('updated_at')}  "
+    f"verified: {cat.get('last_verified_at')}  next: {cat.get('next_review_due')}"
+)
 print("\n# Cloud models")
 for prov, pdata in cat["providers"].items():
     if prov == "local":
         continue
     print(f"\n## {prov}")
     for mid, m in pdata.get("models", {}).items():
-        print(f"  - {mid:28} tier={m.get('tier'):6}  roles={','.join(m.get('role') or [])[:60]}")
-print("\n# Local models")
+        st = m.get("status") or "?"
+        api = m.get("api_id") or mid
+        print(
+            f"  - {mid:28} tier={str(m.get('tier') or ''):6}  status={st:8}  "
+            f"api={api}  ${m.get('cost_in')}/${m.get('cost_out')}"
+        )
+print("\n# Local models (Ollama tags · RAM ≈ footprint)")
 for mid, m in cat["providers"]["local"]["models"].items():
-    print(f"  - {mid:28} ram≈{m.get('ram_gb')}GB  tier={m.get('tier')}")
+    print(
+        f"  - {mid:28} ram≈{m.get('ram_gb')}GB  tier={m.get('tier')}  "
+        f"status={m.get('status') or '?'}"
+    )
 print("\n# Domains")
 for d, spec in load_routing()["domains"].items():
     p = spec.get("primary") or {}
@@ -52,12 +63,21 @@ PY
     cat <<EOF
 # Biweekly catalog research checklist (≈14 days)
 
-## 1. Official model pages (must)
-- Claude:  https://platform.claude.com/docs/en/about-claude/models
+## 0. Status
+$(python3 - <<'PY'
+from effi_core import catalog_status
+s = catalog_status()
+print(f"  version: {s.get('catalog_version')}  updated: {s.get('updated_at')}  next: {s.get('next_review_due')}  stale={s.get('stale')}")
+PY
+)
+
+## 1. Official model pages (must — verify API IDs + prices)
+- Claude:  https://platform.claude.com/docs/en/about-claude/models/overview
 - OpenAI:  https://developers.openai.com/api/docs/models
 - Gemini:  https://ai.google.dev/gemini-api/docs/models
 - Grok/xAI: https://docs.x.ai/docs/models
 - Ollama coding: https://ollama.com/search?q=coding
+- Ollama libs:  https://ollama.com/library/qwen3-coder · devstral · qwen3-coder-next
 
 ## 2. Orchestration evidence (re-check when architecture changes)
 - Anthropic multi-agent: https://www.anthropic.com/engineering/multi-agent-research-system
@@ -65,24 +85,29 @@ PY
 - Claude Agent Teams: https://code.claude.com/docs/en/agent-teams
 
 ## 3. Update files
-1. Edit catalog/models.json  (IDs, prices, ram_gb, roles)
-2. Edit catalog/task-routing.json  (domain → primary/alternates)
-3. Run:  effi catalog bump
-4. Smoke:  effi route "implement auth middleware"
-           effi route "UI mockup design"
-           effi route "40 strings translate"
-           effi pick
+1. Edit catalog/models.json  (api_id, prices, ram_gb, roles, status, notes)
+2. Edit catalog/task-routing.json  (domain → primary/alternates — IDs must exist in models.json)
+3. Set last_verified_at = today
+4. Run:  effi catalog bump
+5. Smoke:
+     python3 -m unittest discover -s tests -v
+     effi route --compact "implement auth middleware"
+     effi route --compact "UI mockup design"
+     effi route --compact "40 strings translate"
+     effi pick
+     effi catalog status
 
-## 4. Optional tools for discovery
-- Ollama library API: curl -s http://localhost:11434/api/tags
-- OpenRouter models (discovery only): https://openrouter.ai/models
-- LMSYS / Artificial Analysis leaderboards (quality signal, not routing truth)
+## 4. Optional discovery (not routing truth)
+- Installed Ollama: ollama list   /   curl -s http://localhost:11434/api/tags
+- OpenRouter catalog (signal only)
+- LMSYS / Artificial Analysis leaderboards
 
 ## 5. Principles that must NOT regress
 - Main Claude thread = one provider (cache continuity)
 - Single writer; clean-context review
 - Local = task+RAM pick, never fixed single model
 - Escalate only after verify fail (≤2 attempts/tier)
+- Do not invent model IDs — official docs only
 EOF
     ;;
   open)

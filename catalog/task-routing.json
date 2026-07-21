@@ -1,6 +1,8 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20",
+  "updated_at": "2026-07-21",
+  "last_verified_at": "2026-07-21",
+  "notes": "Domain→model matrix verified against catalog/models.json on last_verified_at. Model IDs must exist in models.json providers.",
   "philosophy": [
     "Main Claude thread stays on one provider for prompt-cache continuity (miss ~10x).",
     "Route isolated subtasks by capability×cost; escalate only after failed verification (max 2 retries/tier).",

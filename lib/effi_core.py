@@ -1164,6 +1164,7 @@ def catalog_status() -> dict:
     return {
         "catalog_version": cat.get("catalog_version"),
         "updated_at": cat.get("updated_at"),
+        "last_verified_at": cat.get("last_verified_at") or cat.get("updated_at"),
         "next_review_due": cat.get("next_review_due"),
         "stale": catalog_is_stale(cat, cfg),
         "sources": cat.get("sources"),
@@ -1175,14 +1176,17 @@ def bump_catalog_dates() -> dict:
     """Mark catalog as reviewed today; next review +14d. Does not invent new models."""
     cat = load_catalog()
     today = date.today()
-    cat["updated_at"] = today.isoformat()
+    today_s = today.isoformat()
+    cat["updated_at"] = today_s
+    cat["last_verified_at"] = today_s
     cat["next_review_due"] = (today + timedelta(days=14)).isoformat()
     # patch version date stamp
     cat["catalog_version"] = today.strftime("%Y.%m.%d")
     _save_json(CATALOG_MODELS, cat)
     # keep routing timestamp in sync
     routing = load_routing()
-    routing["updated_at"] = today.isoformat()
+    routing["updated_at"] = today_s
+    routing["last_verified_at"] = today_s
     _save_json(CATALOG_ROUTING, routing)
     return catalog_status()
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.4.2 — 2026-07-21
+
+### Changed
+- **Catalog re-verification (2026.07.21)** against official docs:
+  - Claude · OpenAI · Gemini · Grok API IDs confirmed current
+  - Local ladder: `qwen3-coder:30b`, `qwen3-coder-next`, `devstral:24b`, `gpt-oss:20b`,
+    `qwen2.5-coder:14b` (+ measured 7b/3b/1.5b)
+  - Added `last_verified_at`, per-model `api_id` / `status` / notes
+- `effi catalog research` / `show` surface verification status
+- Routing integrity test: domain models must exist in `models.json`
+
 ## 4.4.1 — 2026-07-21
 
 ### Fixed
