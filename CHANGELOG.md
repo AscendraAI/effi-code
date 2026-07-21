@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.4.5 — 2026-07-21
+
+### Added
+- Social / README hero card (`docs/assets/og-card.png`) for launches and share previews
+
 ## 4.4.4 — 2026-07-21
 
 ### Fixed

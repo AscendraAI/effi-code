@@ -4,10 +4,14 @@
 
 ### Cost-aware multi-provider coding orchestration
 
-**CLI:** `effi` · **Version:** [`4.4.4`](VERSION)
+**CLI:** `effi` · **Version:** [`4.4.5`](VERSION)
 
 Route every task to the right model among **Claude · Codex (OpenAI) · Gemini · Grok · Local**,  
 run under one of three modes — **Apex / Cruise / Sip** — and keep working when quota runs out.
+
+<p>
+  <img src="docs/assets/og-card.png" alt="effi-code — Top model where it counts. Cheap models everywhere else. Local when the meter runs out." width="720" />
+</p>
 
 [English](README.md) · [한국어](README_ko.md)
 
@@ -15,7 +19,7 @@ run under one of three modes — **Apex / Cruise / Sip** — and keep working wh
 [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
-![Version](https://img.shields.io/badge/version-4.4.4-green)
+![Version](https://img.shields.io/badge/version-4.4.5-green)
 
 [Quick start](#quick-start) ·
 [Modes](#modes-apex--cruise--sip) ·
