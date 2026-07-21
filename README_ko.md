@@ -4,7 +4,7 @@
 
 ### 비용을 의식한 멀티 프로바이더 코딩 오케스트레이션
 
-**CLI:** `effi` · **버전:** [`4.4.2`](VERSION)
+**CLI:** `effi` · **버전:** [`4.4.3`](VERSION)
 
 **Claude · Codex (OpenAI) · Gemini · Grok · Local** 중 업무에 맞는 모델로 라우팅하고,  
 **Apex / Cruise / Sip** 세 모드로 성능·비용을 조절하며, 쿼터가 바닥나도 작업을 이어갑니다.
@@ -15,7 +15,7 @@
 [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
-![Version](https://img.shields.io/badge/version-4.4.2-green)
+![Version](https://img.shields.io/badge/version-4.4.3-green)
 
 [빠른 시작](#빠른-시작) ·
 [모드](#모드-apex--cruise--sip) ·
@@ -322,6 +322,20 @@ CI는 푸시/PR마다 동일 테스트를 실행합니다: [`.github/workflows/c
 - 바쁜 16 GB 맥은 작은 로컬 모델이 한계입니다 — 천장은 도구가 아니라 메모리.  
 - Claude Agent Teams는 실험·고비용 — XL만.  
 - 카탈로그 ID·가격은 변합니다 — 약 14일마다 재확인.
+
+---
+
+## 무료 툴킷 너머
+
+**effi-code는 계속 무료**입니다 (Apache-2.0). CLI·카탈로그에 페이월 없습니다.
+
+별도로 **실전 문서 킷**(한글 우선: 운영 플레이북 + 출시 케이스 + 체크리스트)을 준비 중입니다.  
+유료 본문은 **이 레포에 넣지 않습니다.**
+
+- 관심 있으면 → **[Package interest](https://github.com/AscendraAI/effi-code/issues/new?template=package-interest.yml)** 이슈  
+- 관심 없으면 → 이 섹션은 무시해도 됩니다. OSS만으로 충분합니다  
+
+절감 수치 보장 없음. 구독 OAuth 프록시 편법 없음.
 
 ---
 

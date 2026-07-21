@@ -4,7 +4,7 @@
 
 ### Cost-aware multi-provider coding orchestration
 
-**CLI:** `effi` · **Version:** [`4.4.2`](VERSION)
+**CLI:** `effi` · **Version:** [`4.4.3`](VERSION)
 
 Route every task to the right model among **Claude · Codex (OpenAI) · Gemini · Grok · Local**,  
 run under one of three modes — **Apex / Cruise / Sip** — and keep working when quota runs out.
@@ -15,7 +15,7 @@ run under one of three modes — **Apex / Cruise / Sip** — and keep working wh
 [![CI](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml/badge.svg)](https://github.com/AscendraAI/effi-code/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![Harness](https://img.shields.io/badge/harness-Claude%20Code-6c47ff)
-![Version](https://img.shields.io/badge/version-4.4.2-green)
+![Version](https://img.shields.io/badge/version-4.4.3-green)
 
 [Quick start](#quick-start) ·
 [Modes](#modes-apex--cruise--sip) ·
@@ -322,6 +322,19 @@ Highlights:
 - Busy 16 GB machines stay on small local models — memory is the ceiling.  
 - Agent Teams (Claude Code experimental) are optional and expensive — XL only.  
 - Catalog IDs/prices drift; re-check every ~14 days.
+
+---
+
+## Beyond the free toolkit
+
+**effi-code stays free** (Apache-2.0). No paywall on the CLIs or catalog.
+
+A separate **practical document kit** (Korean-first) is in preparation: deeper operating playbook + real ship case notes + checklists. It is **not** bundled in this repo.
+
+- Interested? open a **[Package interest](https://github.com/AscendraAI/effi-code/issues/new?template=package-interest.yml)** issue  
+- Uninterested? ignore this section — the OSS path is complete on its own  
+
+No guaranteed savings claims. No subscription-proxy tricks.
 
 ---
 

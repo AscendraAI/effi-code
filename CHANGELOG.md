@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.4.3 — 2026-07-21
+
+### Added
+- Soft CTA for optional practical document kit (OSS stays free)
+- GitHub Issue template: **Package interest** (`package-interest` label)
+
 ## 4.4.2 — 2026-07-21
 
 ### Changed

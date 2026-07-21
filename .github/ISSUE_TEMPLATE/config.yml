@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Docs / why
+    url: https://github.com/AscendraAI/effi-code/blob/master/docs/why.md
+    about: Design rationale and research links
