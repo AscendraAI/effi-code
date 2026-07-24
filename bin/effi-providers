@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# effi-providers — Layer 2: provider usage detail + budget management (v4.5)
+#
+#   effi providers                         detail table (connection + used + remaining)
+#   effi providers --probe                 also make live API calls
+#   effi providers --json
+#   effi providers budget <id> <usd>       set a provider's USD budget
+#   effi providers record <id> <model> <in> <out> [task]   append a usage event
+#   effi providers reset [--no-archive]    clear the usage ledger (window reset)
+#
+# Credit = LOCAL USD ESTIMATE. See docs/02-design/model-transparency-advisor.md
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+SUB="${1:-show}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$SUB" in
+  -h|--help)
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+
+  budget)
+    PID="${1:?usage: effi providers budget <id> <usd>}"
+    USD="${2:?usage: effi providers budget <id> <usd>}"
+    PID="$PID" USD="$USD" python3 - <<'PY'
+import os
+from effi_core import set_provider_budget
+try:
+    r = set_provider_budget(os.environ["PID"], float(os.environ["USD"]))
+    print(f"✓ {os.environ['PID']} budget = ${r['budget_usd']:.2f}")
+except (KeyError, ValueError) as e:
+    raise SystemExit(f"error: {e.args[0] if e.args else e}")
+PY
+    ;;
+
+  record)
+    PID="${1:?usage: effi providers record <id> <model> <in> <out> [task]}"
+    MODEL="${2:?model required}"; TIN="${3:?in-tokens required}"; TOUT="${4:?out-tokens required}"
+    TASK="${5:-}"
+    PID="$PID" MODEL="$MODEL" TIN="$TIN" TOUT="$TOUT" TASK="$TASK" python3 - <<'PY'
+import os
+from effi_core import record_usage
+try:
+    tin, tout = int(os.environ["TIN"]), int(os.environ["TOUT"])
+except ValueError:
+    raise SystemExit("error: in/out tokens must be integers")
+ev = record_usage(os.environ["PID"], os.environ["MODEL"],
+                  tokens_in=tin, tokens_out=tout,
+                  task=(os.environ.get("TASK") or None))
+print(f"✓ recorded {ev['provider']}/{ev['model']} in={ev['in']} out={ev['out']} ~${ev['est_usd']:.4f}")
+PY
+    ;;
+
+  reset)
+    ARCHIVE=1
+    for a in "$@"; do [ "$a" = "--no-archive" ] && ARCHIVE=0; done
+    ARCHIVE="$ARCHIVE" python3 - <<'PY'
+import os
+from effi_core import reset_ledger
+dest = reset_ledger(archive=os.environ.get("ARCHIVE") == "1")
+print(f"✓ ledger archived → {dest}" if dest else "✓ ledger cleared (nothing to archive)")
+PY
+    ;;
+
+  show|*)
+    # reject an unknown non-flag subcommand instead of silently showing the table
+    if [ "$SUB" != "show" ] && [ "${SUB#-}" = "$SUB" ]; then
+      echo "unknown subcommand: $SUB" >&2
+      echo "usage: effi providers [show|budget|record|reset] [--probe] [--json]" >&2
+      exit 2
+    fi
+    PROBE=0; JSON=0
+    ARGS=("$SUB")
+    [ "$SUB" = "show" ] && ARGS=()
+    for a in "${ARGS[@]:-}" "$@"; do
+      case "$a" in
+        --probe|-p) PROBE=1 ;;
+        --json|-j) JSON=1 ;;
+      esac
+    done
+    PROBE="$PROBE" JSON="$JSON" python3 - <<'PY'
+import os
+from effi_core import providers_detail, format_providers, print_json
+d = providers_detail(probe=os.environ.get("PROBE") == "1")
+print_json(d) if os.environ.get("JSON") == "1" else print(format_providers(d))
+PY
+    ;;
+esac

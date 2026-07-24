@@ -111,6 +111,17 @@ class HeadroomTests(unittest.TestCase):
         h = estimate_headroom("codex", {"budget_usd": 5.0}, summary=summ)
         self.assertEqual(h["remaining_usd"], 0.0)
 
+    def test_free_provider_is_free_kind(self):
+        h = estimate_headroom("local", {"free": True, "budget_usd": 0}, summary={})
+        self.assertEqual(h["kind"], "free")
+        self.assertIsNone(h["remaining_pct"])
+
+    def test_free_provider_connected_when_cli_present(self):
+        spec = {"free": True, "cli": "ollama", "models_provider": "local"}
+        with mock.patch.object(ec, "_which", lambda c: "/usr/bin/ollama" if c == "ollama" else None):
+            r = probe_provider("local", spec)
+        self.assertEqual(r["connection"], "connected")
+
 
 class RecommendModeTests(unittest.TestCase):
     def _p(self, pid, conn, pct=None):

@@ -130,6 +130,7 @@ PY
   init) exec "$BIN/effi-init" "$@" ;;
   doctor) exec "$BIN/effi-doctor" "$@" ;;
   preflight|pre) exec "$BIN/effi-preflight" "$@" ;;
+  providers|prov) exec "$BIN/effi-providers" "$@" ;;
   use) exec "$BIN/effi-use" "$@" ;;
   log) exec "$BIN/effi-log" "$@" ;;
   mode) exec "$BIN/effi-mode" "$@" ;;
@@ -150,6 +151,7 @@ Sessions
   effi local               Ollama local backend
   effi status · doctor · init
   effi preflight           provider connection + credit advisor (--probe)
+  effi providers           usage detail + budget mgmt (budget|record|reset)
 
 Routing
   effi route|use "task…"   model pick (respects active mode)

@@ -155,7 +155,10 @@ old = path.read_text(encoding="utf-8")
 messages = build_edit_messages(path, old, instruction)
 
 try:
-    raw = ollama_chat(model, messages, url=url)
+    raw = ollama_chat(
+        model, messages, url=url,
+        record={"provider": "local", "model": model, "task": "effi-edit"},
+    )
 except Exception as e:
     print(f"local edit failed: {e}", file=sys.stderr)
     sys.exit(1)

@@ -46,6 +46,15 @@
       "probe_api": "https://api.x.ai/v1/models",
       "credit_source": "ledger",
       "budget_usd": 0
+    },
+    "local": {
+      "label": "Local (Ollama)",
+      "models_provider": "local",
+      "cli": "ollama",
+      "credit_source": "ledger",
+      "budget_usd": 0,
+      "free": true,
+      "note": "Ollama 로컬 — 비용 $0, 토큰량만 추적(effi-edit/run이 자동 기록)"
     }
   }
 }

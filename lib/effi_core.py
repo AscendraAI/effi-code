@@ -1656,6 +1656,9 @@ def estimate_headroom(pid: str, spec: dict, summary: Optional[dict] = None) -> d
     summ = summary if summary is not None else usage_summary()
     used = float((summ.get(pid) or {}).get("usd") or 0.0)
     budget = float(spec.get("budget_usd") or 0)
+    if spec.get("free"):
+        return {"kind": "free", "used_usd": round(used, 4), "budget_usd": None,
+                "remaining_usd": None, "remaining_pct": None}
     if budget <= 0:
         kind = "subscription" if spec.get("subscription") else "unbudgeted"
         return {"kind": kind, "used_usd": round(used, 4), "budget_usd": None,
@@ -1726,6 +1729,10 @@ def probe_provider(pid: str, spec: dict, do_call: bool = False) -> dict:
     else:
         conn = "partial"
 
+    # free local backend (Ollama): needs no credential — CLI present ⇒ usable
+    if spec.get("free") and (cli_path or legacy_path):
+        conn = "connected"
+
     # gemini special-case: interactive CLI (gemini) EOL 2026-06-18 → agy.
     # If neither agy nor legacy present but API key is, it's api-only (usable, 🟡).
     if pid == "gemini" and not cli_path and not legacy_path and has_key:
@@ -1784,6 +1791,8 @@ def format_preflight(pf: dict) -> str:
         hz = p.get("headroom") or {}
         if hz.get("remaining_pct") is not None:
             usage = f"~${hz['remaining_usd']:.2f}/${hz['budget_usd']:.0f}"
+        elif hz.get("kind") == "free":
+            usage = "무료(로컬)"
         elif hz.get("kind") == "subscription":
             usage = "~여유(구독)"
         else:
@@ -1798,6 +1807,135 @@ def format_preflight(pf: dict) -> str:
         f"  추천 모드: {rm.get('emoji','')} {rm.get('name', rec['mode'])}",
         f"  근거: {rec['reason']}",
         f"  현재: {cur.get('emoji','')} {cur.get('name','?')}   |   전환: effi mode set {rec['mode']}   |   상세: effi providers",
+    ]
+    return "\n".join(lines)
+
+
+# ── Usage ledger write side + provider management (Layer 2) ──────────
+
+def _models_provider_for(pid: str) -> str:
+    """Map a providers-registry key (codex/gemini/…) to its models.json
+    pricing provider (openai/gemini/…). Falls back to the key itself."""
+    spec = (load_providers().get("providers") or {}).get(pid) or {}
+    return spec.get("models_provider", pid)
+
+
+def record_usage(
+    provider: str,
+    model: str,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    task: Optional[str] = None,
+    session: Optional[str] = None,
+    est_usd: Optional[float] = None,
+) -> dict:
+    """Append one usage event to the USD ledger (append-only NDJSON).
+
+    est_usd is computed from models.json price (USD per 1M tokens) when not
+    given. Local/free models price to 0. This is the write side that makes
+    estimate_headroom() reflect real accumulated usage.
+    """
+    if est_usd is None:
+        price = model_price(_models_provider_for(provider), model)
+        if price:
+            ci, co = price
+            est_usd = (int(tokens_in or 0) / 1_000_000) * ci + (int(tokens_out or 0) / 1_000_000) * co
+        else:
+            est_usd = 0.0
+    ev = {
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "provider": provider,
+        "model": model,
+        "in": int(tokens_in or 0),
+        "out": int(tokens_out or 0),
+        "est_usd": round(float(est_usd), 6),
+    }
+    if task:
+        ev["task"] = task
+    if session:
+        ev["session"] = session
+    USAGE_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with open(USAGE_LEDGER, "a", encoding="utf-8") as f:
+        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    return ev
+
+
+def reset_ledger(archive: bool = True) -> Optional[Path]:
+    """Clear the usage ledger (optionally archiving it alongside). Use when a
+    budget window resets. Returns the archive path, or None if nothing to clear."""
+    if not USAGE_LEDGER.exists():
+        return None
+    if archive:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = USAGE_LEDGER.with_name(f"usage-ledger.{stamp}.ndjson")
+        n = 1
+        while dest.exists():  # never clobber an archive from the same second
+            dest = USAGE_LEDGER.with_name(f"usage-ledger.{stamp}.{n}.ndjson")
+            n += 1
+        USAGE_LEDGER.rename(dest)
+        return dest
+    USAGE_LEDGER.unlink()
+    return None
+
+
+def set_provider_budget(pid: str, usd: float) -> dict:
+    """Set budget_usd for a provider, persisting to the USER providers.json
+    (seeded from the bundled example on first write)."""
+    if usd < 0:
+        raise ValueError("budget must be >= 0")
+    data = load_providers()
+    provs = data.setdefault("providers", {})
+    if pid not in provs:
+        raise KeyError(f"unknown provider: {pid} (known: {', '.join(provs) or 'none'})")
+    provs[pid]["budget_usd"] = float(usd)
+    USER_PROVIDERS.parent.mkdir(parents=True, exist_ok=True)
+    _save_json(USER_PROVIDERS, data)
+    return provs[pid]
+
+
+def providers_detail(probe: bool = False) -> dict:
+    """Full per-provider view: connection + budget + used + estimated remaining."""
+    provs = (load_providers().get("providers") or {})
+    summ = usage_summary()
+    rows = []
+    for pid, spec in provs.items():
+        pr = probe_provider(pid, spec, do_call=probe)
+        rows.append({
+            **pr,
+            "headroom": estimate_headroom(pid, spec, summ),
+            "usage": summ.get(pid) or {"in": 0, "out": 0, "usd": 0.0, "events": 0},
+            "budget_usd": spec.get("budget_usd"),
+            "models_provider": spec.get("models_provider", pid),
+        })
+    total = round(sum(float((v or {}).get("usd") or 0) for v in summ.values()), 4)
+    return {"at": datetime.now().isoformat(timespec="minutes"),
+            "providers": rows, "total_usd": total,
+            "ledger": str(USAGE_LEDGER)}
+
+
+def format_providers(detail: dict) -> str:
+    lines = [f"effi providers — {detail.get('at','')}", ""]
+    lines.append(f"  {'Provider':<11}{'Connection':<22}{'Used':<12}{'Budget':<10}Remaining (~추정)")
+    lines.append("  " + "─" * 9 + "  " + "─" * 20 + "  " + "─" * 10 + "  " + "─" * 8 + "  " + "─" * 16)
+    for p in detail["providers"]:
+        icon = _CONN_ICON.get(p["connection"], "·")
+        hz = p.get("headroom") or {}
+        used = f"${float((p.get('usage') or {}).get('usd') or 0):.2f}"
+        budget = f"${p['budget_usd']:.0f}" if p.get("budget_usd") else "—"
+        if hz.get("remaining_pct") is not None:
+            remaining = f"~${hz['remaining_usd']:.2f} ({hz['remaining_pct']:.0f}%)"
+        elif hz.get("kind") == "free":
+            remaining = "무료(로컬)"
+        elif hz.get("kind") == "subscription":
+            remaining = "~여유(구독)"
+        else:
+            remaining = "~예산미설정"
+        ev = (p.get("usage") or {}).get("events") or 0
+        lines.append(f"  {icon} {p['id']:<9}{p['detail']:<22}{used:<12}{budget:<10}{remaining}  · {ev}건")
+    lines += [
+        "",
+        f"  누적 추정: ${detail.get('total_usd', 0):.2f}   |   원장: {detail.get('ledger')}",
+        "  예산 설정: effi providers budget <id> <usd>   |   초기화: effi providers reset",
     ]
     return "\n".join(lines)
 
@@ -2023,8 +2161,16 @@ def ollama_chat(
     url: Optional[str] = None,
     temperature: float = 0.2,
     timeout: int = 600,
+    record: Optional[dict] = None,
 ) -> str:
-    """Call Ollama /api/chat; return assistant content text."""
+    """Call Ollama /api/chat; return assistant content text.
+
+    If ``record`` is given (e.g. {"provider": "local", "task": "effi-edit"}),
+    append a usage event with the token counts Ollama reports. Local models are
+    free, so est_usd is 0 — this captures token *volume* for transparency. This
+    is the one cloud-vs-local call site effi runs in-process; cloud CLI sessions
+    are exec'd away and are captured via P3 hooks instead.
+    """
     if url is None:
         try:
             url = (load_config().get("local") or {}).get("ollama_url")
@@ -2045,6 +2191,18 @@ def ollama_chat(
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.load(r)
+    if record:
+        try:
+            record_usage(
+                provider=record.get("provider", "local"),
+                model=record.get("model", model),
+                tokens_in=int(d.get("prompt_eval_count") or 0),
+                tokens_out=int(d.get("eval_count") or 0),
+                task=record.get("task"),
+                session=record.get("session"),
+            )
+        except Exception:
+            pass  # usage recording must never break the actual edit
     msg = d.get("message") or {}
     return (msg.get("content") or d.get("response") or "").rstrip()
 
