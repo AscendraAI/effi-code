@@ -179,8 +179,8 @@ Claude Code 커스텀 statusline 스크립트(`bin/effi-statusline`) 신설:
 
 - **P0 (설계)** — 본 문서 ✅ (commit 71c4e8d)
 - **P1 (Layer 1)** ✅ — providers.json + `preflight()`/`probe_provider`/`recommend_mode` + `bin/effi-preflight` + doctor agy 폴백 + 20 테스트 + clean-context 리뷰 반영 (commit bf51ff5). `usage_summary`/`estimate_headroom` 읽기측도 선반영.
-- **P2 (Layer 2)** — usage-ledger **쓰기측**(`record_usage`) + `effi providers` 상세 + 라우팅 훅 연동.
-- **P3 (Layer 3)** — statusline + 주기 넛지 + SessionStart 훅 배선.
+- **P2 (Layer 2)** ✅ — `record_usage`(USD 계산) + `effi providers`(budget/record/reset) + `ollama_chat` 로컬 기록 훅 + local/free 프로바이더 + 14 테스트 + clean-context 리뷰 반영 (commit e34e3de).
+- **P3 (Layer 3)** — statusline(`bin/effi-statusline`) + 주기 넛지 + **SessionStart/Stop 훅 배선**(클라우드 메인스레드 USD 캡처는 여기서).
 
 ## 10. Resolved Decisions (2026-07-24 확정)
 
