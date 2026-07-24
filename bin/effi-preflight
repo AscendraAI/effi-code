@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# effi-preflight — Layer 1: provider connection + credit advisor (v4.5)
+#
+#   effi preflight                 fast (existence check)
+#   effi preflight --probe         also make a live API models call
+#   effi preflight --task "…"      tailor the mode recommendation to a task
+#   effi preflight --json
+#
+# Connection = live probe. Credit = LOCAL USD ESTIMATE (see
+# docs/02-design/model-transparency-advisor.md).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+PROBE=0
+JSON=0
+TASK=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --probe|-p) PROBE=1 ;;
+    --json|-j) JSON=1 ;;
+    --task|-t) shift; TASK="${1:-}" ;;
+    -h|--help)
+      echo "usage: effi preflight [--probe] [--task \"…\"] [--json]"; exit 0 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+  # guarded: --task consumes its value above, so the list may already be empty
+  if [ "$#" -gt 0 ]; then shift; fi
+done
+
+PROBE="$PROBE" JSON="$JSON" TASK="$TASK" python3 - <<'PY'
+import os
+from effi_core import preflight, format_preflight, print_json
+
+pf = preflight(
+    probe=os.environ.get("PROBE") == "1",
+    task_hint=(os.environ.get("TASK") or None),
+)
+if os.environ.get("JSON") == "1":
+    print_json(pf)
+else:
+    print(format_preflight(pf))
+PY

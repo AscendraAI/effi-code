@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "note": "Copy to ~/.config/effi/providers.json and set budget_usd per provider. Connection is probed live; credit is a LOCAL USD ESTIMATE (see docs/02-design/model-transparency-advisor.md).",
+  "providers": {
+    "claude": {
+      "label": "Claude",
+      "models_provider": "claude",
+      "cli": "claude",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "cli_auth": "subscription_oauth",
+      "probe_api": "https://api.anthropic.com/v1/models",
+      "credit_source": "ledger",
+      "budget_usd": 0,
+      "subscription": true,
+      "note": "Pro/Max 구독은 잔여 조회 불가 — 사용량 USD 환산 추정만"
+    },
+    "codex": {
+      "label": "Codex (OpenAI)",
+      "models_provider": "openai",
+      "cli": "codex",
+      "api_key_env": "OPENAI_API_KEY",
+      "cli_auth": "subscription_oauth",
+      "probe_api": "https://api.openai.com/v1/models",
+      "credit_source": "ledger",
+      "budget_usd": 0,
+      "note": "CLI 로그인(codex login, ChatGPT 구독) 또는 OPENAI_API_KEY 둘 중 하나로 연결"
+    },
+    "gemini": {
+      "label": "Gemini",
+      "models_provider": "gemini",
+      "cli": "agy",
+      "cli_legacy": "gemini",
+      "api_key_env": "GEMINI_API_KEY",
+      "cli_auth": "google_oauth",
+      "probe_api": "https://generativelanguage.googleapis.com/v1beta/models",
+      "credit_source": "ledger",
+      "budget_usd": 0,
+      "note": "gemini CLI 2026-06-18 사멸 → agy(Antigravity). API(GEMINI_API_KEY)는 라우팅용 별개 유지"
+    },
+    "grok": {
+      "label": "Grok (xAI)",
+      "models_provider": "grok",
+      "cli": "grok",
+      "api_key_env": "XAI_API_KEY",
+      "cli_auth": "subscription_oauth",
+      "probe_api": "https://api.x.ai/v1/models",
+      "credit_source": "ledger",
+      "budget_usd": 0
+    }
+  }
+}

@@ -1471,6 +1471,15 @@ def doctor() -> dict:
 
     for cmd in ("codex", "gemini", "grok"):
         p = which(cmd)
+        if cmd == "gemini" and not p:
+            # gemini CLI EOL 2026-06-18 → Antigravity CLI (agy)
+            agy = which("agy")
+            detail = (
+                f"gemini EOL → agy at {agy}" if agy
+                else "gemini EOL 2026-06-18 → install agy (antigravity.google) or use GEMINI_API_KEY"
+            )
+            checks.append({"name": "cli:gemini", "ok": True, "detail": detail})
+            continue
         checks.append({"name": f"cli:{cmd}", "ok": True, "detail": p or "optional — not found"})
 
     # Ollama (optional unless you rely on local / effi local)
@@ -1560,6 +1569,237 @@ def doctor() -> dict:
         "project": str(proj),
         "checks": checks,
     }
+
+
+# ── Providers & preflight (Layer 1: connection + credit advisor) ─────
+# See docs/02-design/model-transparency-advisor.md
+# Connection = live probe (real). Credit = LOCAL USD ESTIMATE (never faked
+# as real-time balance — provider APIs mostly can't return remaining credit).
+
+CATALOG_PROVIDERS = ROOT / "catalog" / "providers.example.json"
+USER_PROVIDERS = CONFIG_DIR / "providers.json"
+USAGE_LEDGER = CONFIG_DIR / "usage-ledger.ndjson"
+
+_PROVIDER_BEST_FOR = {
+    "claude": "plan/impl/review",
+    "openai": "bulk/refactor",
+    "gemini": "design/research",
+    "grok": "research/realtime",
+    "local": "bulk/mechanical",
+}
+_CONN_ICON = {"connected": "🟢", "partial": "🟡", "down": "🔴"}
+
+
+def _which(cmd: Optional[str]) -> Optional[str]:
+    if not cmd:
+        return None
+    from shutil import which as w
+    return w(cmd)
+
+
+def load_providers() -> dict:
+    """User providers.json if present, else bundled example (works zero-config)."""
+    if USER_PROVIDERS.exists():
+        return _load_json(USER_PROVIDERS)
+    if CATALOG_PROVIDERS.exists():
+        return _load_json(CATALOG_PROVIDERS)
+    return {"schema_version": 1, "providers": {}}
+
+
+def model_price(models_provider: str, model_id: str) -> Optional[tuple]:
+    """(cost_in, cost_out) USD per 1M tokens from models.json, or None."""
+    cat = load_catalog()
+    prov = (cat.get("providers") or {}).get(models_provider) or {}
+    m = (prov.get("models") or {}).get(model_id)
+    if not m or m.get("cost_in") is None or m.get("cost_out") is None:
+        return None
+    return (float(m["cost_in"]), float(m["cost_out"]))
+
+
+def usage_summary(provider: Optional[str] = None, since: Optional[str] = None) -> dict:
+    """Read-only aggregate of the USD usage ledger.
+
+    Returns {provider: {"in","out","usd","events"}}. P1 ships the read side;
+    record_usage() (write side) lands in P2.
+    """
+    out: dict = {}
+    if not USAGE_LEDGER.exists():
+        return out
+    with open(USAGE_LEDGER, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+                p = ev.get("provider")
+                if not p:
+                    continue
+                if provider and p != provider:
+                    continue
+                if since and (ev.get("at") or "") < since:
+                    continue
+                agg = out.setdefault(p, {"in": 0, "out": 0, "usd": 0.0, "events": 0})
+                agg["in"] += int(ev.get("in") or 0)
+                agg["out"] += int(ev.get("out") or 0)
+                agg["usd"] += float(ev.get("est_usd") or 0)
+                agg["events"] += 1
+            except Exception:
+                # skip any malformed line (bad JSON OR non-numeric fields) —
+                # a corrupt ledger must never crash preflight/SessionStart
+                continue
+    return out
+
+
+def estimate_headroom(pid: str, spec: dict, summary: Optional[dict] = None) -> dict:
+    """USD-unified estimate. remaining_pct=None when unbudgeted or subscription."""
+    summ = summary if summary is not None else usage_summary()
+    used = float((summ.get(pid) or {}).get("usd") or 0.0)
+    budget = float(spec.get("budget_usd") or 0)
+    if budget <= 0:
+        kind = "subscription" if spec.get("subscription") else "unbudgeted"
+        return {"kind": kind, "used_usd": round(used, 4), "budget_usd": None,
+                "remaining_usd": None, "remaining_pct": None}
+    remaining = max(0.0, budget - used)
+    return {"kind": "usd", "used_usd": round(used, 4), "budget_usd": budget,
+            "remaining_usd": round(remaining, 2),
+            "remaining_pct": round(100 * remaining / budget, 1)}
+
+
+def _probe_api_call(url: str, key_env: str, pid: str, timeout: float = 4.0) -> bool:
+    """Lightweight live reachability check (models list). Provider-specific auth."""
+    key = os.environ.get(key_env)
+    if not key:
+        return False
+    headers: dict = {}
+    target = url
+    if pid == "claude":
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    elif pid == "gemini":
+        sep = "&" if "?" in target else "?"
+        target = f"{target}{sep}key={key}"
+    else:  # codex/openai, grok/xai — bearer
+        headers = {"Authorization": f"Bearer {key}"}
+    try:
+        req = urllib.request.Request(target, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= getattr(r, "status", 200) < 300
+    except Exception:
+        return False
+
+
+def probe_provider(pid: str, spec: dict, do_call: bool = False) -> dict:
+    """Connection status: existence check + optional live API call.
+
+    🟢 connected: credential present (key, or oauth-cli) and reachable/unchecked
+    🟡 partial:   credential present but CLI missing / api-only / call failed
+    🔴 down:      no credential and no CLI
+    """
+    key_env = spec.get("api_key_env")
+    has_key = bool(key_env and os.environ.get(key_env))
+    cli, cli_legacy = spec.get("cli"), spec.get("cli_legacy")
+    cli_path = _which(cli)
+    legacy_path = _which(cli_legacy)
+    oauth = spec.get("cli_auth") in ("subscription_oauth", "google_oauth")
+
+    parts = []
+    if has_key:
+        parts.append("key")
+    if cli_path:
+        parts.append(f"cli:{cli}")
+    elif legacy_path:
+        parts.append(f"cli:{cli_legacy}(legacy)")
+
+    has_cred = has_key or (oauth and (cli_path or legacy_path))
+
+    api_ok = None
+    if do_call and has_key and spec.get("probe_api"):
+        api_ok = _probe_api_call(spec["probe_api"], key_env, pid)
+        parts.append("api ok" if api_ok else "api fail")
+
+    if not has_cred and not cli_path and not legacy_path:
+        conn = "down"
+    elif api_ok is False:
+        conn = "partial"
+    elif has_cred:
+        conn = "connected"
+    else:
+        conn = "partial"
+
+    # gemini special-case: interactive CLI (gemini) EOL 2026-06-18 → agy.
+    # If neither agy nor legacy present but API key is, it's api-only (usable, 🟡).
+    if pid == "gemini" and not cli_path and not legacy_path and has_key:
+        conn = "partial"
+        parts.append("api-only (agy 미설치)")
+
+    return {"id": pid, "label": spec.get("label", pid), "connection": conn,
+            "detail": ", ".join(parts) or "no credential",
+            "cli": cli, "has_key": has_key, "api_ok": api_ok}
+
+
+def preflight(probe: bool = False, task_hint: Optional[str] = None) -> dict:
+    """Layer 1: check all providers + recommend a mode. Safe to run at SessionStart."""
+    provs = (load_providers().get("providers") or {})
+    summ = usage_summary()
+    results = []
+    for pid, spec in provs.items():
+        pr = probe_provider(pid, spec, do_call=probe)
+        pr["headroom"] = estimate_headroom(pid, spec, summ)
+        pr["best_for"] = _PROVIDER_BEST_FOR.get(spec.get("models_provider", pid), "—")
+        results.append(pr)
+    band = assess_task_importance(task_hint).get("band") if task_hint else None
+    return {"at": datetime.now().isoformat(timespec="minutes"),
+            "providers": results,
+            "mode_recommendation": recommend_mode(results, band),
+            "current_mode": get_mode()}
+
+
+def recommend_mode(providers: list, importance_band: Optional[str] = None) -> dict:
+    """Suggest a mode from connection health + estimated headroom + task band."""
+    by = {p["id"]: p for p in providers}
+    claude_up = (by.get("claude") or {}).get("connection") == "connected"
+    others_up = sum(1 for p in providers
+                    if p["id"] != "claude" and p.get("connection") != "down")
+    tight = any((p.get("headroom") or {}).get("remaining_pct") is not None
+                and p["headroom"]["remaining_pct"] < 15 for p in providers)
+    high = importance_band == "high"
+
+    if not claude_up and not others_up:
+        return {"mode": "sip", "reason": "연결된 클라우드 프로바이더 없음 → 로컬/저가 우선(Sip)"}
+    if tight:
+        return {"mode": "sip", "reason": "예산 여유 부족(추정 <15%) → 비용 최소 Sip 권장"}
+    if high and claude_up:
+        return {"mode": "apex", "reason": "고위험/고난도 작업 + Claude 여유 → 최고 성능 Apex"}
+    if claude_up:
+        return {"mode": "cruise", "reason": "Claude 연결 양호 + 보조 프로바이더 가용 → 균형 Cruise"}
+    return {"mode": "cruise", "reason": "기본 균형 운용"}
+
+
+def format_preflight(pf: dict) -> str:
+    lines = [f"effi preflight — {pf.get('at','')}", ""]
+    lines.append(f"  {'Provider':<11}{'Connection':<24}{'Usage (~추정)':<16}Best for")
+    lines.append("  " + "─" * 9 + "  " + "─" * 22 + "  " + "─" * 14 + "  " + "─" * 16)
+    for p in pf["providers"]:
+        icon = _CONN_ICON.get(p["connection"], "·")
+        hz = p.get("headroom") or {}
+        if hz.get("remaining_pct") is not None:
+            usage = f"~${hz['remaining_usd']:.2f}/${hz['budget_usd']:.0f}"
+        elif hz.get("kind") == "subscription":
+            usage = "~여유(구독)"
+        else:
+            usage = "~예산미설정"
+        lines.append(f"  {icon} {p['id']:<9}{p['detail']:<24}{usage:<16}{p.get('best_for','—')}")
+    rec = pf["mode_recommendation"]
+    cur = pf.get("current_mode") or {}
+    modes = {m["id"]: m for m in list_modes()}
+    rm = modes.get(rec["mode"], {})
+    lines += [
+        "",
+        f"  추천 모드: {rm.get('emoji','')} {rm.get('name', rec['mode'])}",
+        f"  근거: {rec['reason']}",
+        f"  현재: {cur.get('emoji','')} {cur.get('name','?')}   |   전환: effi mode set {rec['mode']}   |   상세: effi providers",
+    ]
+    return "\n".join(lines)
 
 
 # ── CLI helpers ──────────────────────────────────────────────────────
