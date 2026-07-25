@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# effi-connect — Layer 0: onboarding intro + guided provider connect (v4.6)
+#
+#   effi connect                 status + how to connect each missing provider
+#   effi connect --intro         also print the effi-code explainer
+#   effi connect --probe         live API reachability check (slower)
+#   effi connect --json          machine-readable (for the assistant / re-check)
+#   effi connect <provider>      run that provider's first-party login (TTY)
+#
+# ToS: guides/runs each provider's OWN login only (codex login, agy, claude, …)
+# or an API-key env var — never proxies subscription OAuth through a router.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+INTRO=0; PROBE=0; JSON=0; TARGET=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --intro|-i) INTRO=1 ;;
+    --probe|-p) PROBE=1 ;;
+    --json|-j) JSON=1 ;;
+    -h|--help)
+      echo "usage: effi connect [<provider>] [--intro] [--probe] [--json]"; exit 0 ;;
+    -*) echo "unknown arg: $1" >&2; exit 2 ;;
+    *)
+      if [ -n "$TARGET" ]; then
+        echo "connect: 한 번에 한 프로바이더만 지정하세요 ('$TARGET' vs '$1')" >&2
+        exit 2
+      fi
+      TARGET="$1" ;;
+  esac
+  shift
+done
+
+OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
+
+# ── effi connect <provider> → run that provider's first-party login ──
+if [ -n "$TARGET" ]; then
+  OUT="$(TARGET="$TARGET" python3 - <<'PY'
+import os, shlex
+from effi_core import load_providers, connect_command
+pid = os.environ["TARGET"]
+provs = (load_providers().get("providers") or {})
+if pid not in provs:
+    print("UNKNOWN"); raise SystemExit(0)
+c = connect_command(pid, provs[pid])
+if c["available"]:
+    print("EXEC " + " ".join(shlex.quote(x) for x in c["cmd"]))
+else:
+    print("INSTALL " + (c.get("binary") or "") + "\t" + (c.get("login") or ""))
+PY
+)"
+  STATUS="${OUT%% *}"
+  case "$STATUS" in
+    UNKNOWN)
+      echo "unknown provider: $TARGET" >&2
+      echo "  목록 보기: effi connect" >&2
+      exit 3 ;;
+    INSTALL)
+      REST="${OUT#INSTALL }"
+      BINARY="${REST%%$'\t'*}"
+      LOGIN="${REST#*$'\t'}"
+      echo "· $TARGET 로그인 CLI '${BINARY:-?}' 미설치 — 설치 후 다시: effi connect $TARGET" >&2
+      echo "  연결법: $LOGIN" >&2
+      exit 1 ;;
+    EXEC)
+      CMD="${OUT#EXEC }"
+      # Starting a local daemon is idempotent-by-check: probe_provider marks
+      # 'local' connected on CLI presence alone, so `ollama serve` would bind-
+      # conflict when the daemon is already up (the common case). Short-circuit.
+      if [ "$CMD" = "ollama serve" ] \
+         && curl -sf --connect-timeout 1 --max-time 3 "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
+        echo "✅ local 이미 실행 중 ($OLLAMA_URL) — 시작 불필요"
+        exit 0
+      fi
+      echo "▶ effi connect $TARGET → $CMD"
+      # word-split intentionally: our login commands take no spaced arguments
+      # shellcheck disable=SC2086
+      exec $CMD ;;
+    *)
+      echo "connect: unexpected state for $TARGET" >&2; exit 1 ;;
+  esac
+fi
+
+# ── effi connect → status + how-to-connect (default) ──
+INTRO="$INTRO" PROBE="$PROBE" JSON="$JSON" python3 - <<'PY'
+import os
+from effi_core import connect_report, format_connect, print_json
+rep = connect_report(probe=os.environ.get("PROBE") == "1")
+if os.environ.get("JSON") == "1":
+    print_json(rep)
+else:
+    print(format_connect(rep, intro=os.environ.get("INTRO") == "1"))
+PY

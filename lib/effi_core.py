@@ -1814,6 +1814,132 @@ def format_preflight(pf: dict) -> str:
     return "\n".join(lines)
 
 
+# ── Onboarding & guided connect (Layer 0: welcome + connect) ─────────
+# See docs/02-design/onboarding-connect.md. `effi connect` explains what
+# effi-code is, shows which providers are connected, and guides the user
+# through each provider's OWN first-party login. It NEVER proxies subscription
+# OAuth through a router (ToS hard-no) — it only points to / runs the provider's
+# native auth (codex login, agy, claude, …) or an API-key env var.
+
+def onboarding_intro() -> str:
+    """One-paragraph effi-code explainer — single source of truth reused by the
+    SessionStart hook, the launcher, and `effi connect --intro`."""
+    return (
+        "effi-code — 비용 인지형 멀티-프로바이더 코딩 오케스트레이터.\n"
+        "  한 대화(메인 스레드는 Claude 유지)에서 작업을 분류해 Claude·Codex·"
+        "Gemini·Grok·로컬(Ollama) 중 가장 적합·경제적인 모델로 라우팅합니다.\n"
+        "  성능↔비용은 3모드로 조절: 🚀 Apex(최고성능) · 🛣 Cruise(균형) · "
+        "☕ Sip(최소비용). 연결은 실측하고, 크레딧은 로컬 추정 원장으로 정직하게 표시합니다."
+    )
+
+
+# How to connect each provider — each entry is the provider's OWN first-party
+# login (or an API-key env). `login` is the human hint; `cmd` is what
+# `effi connect <pid>` execs interactively in a TTY.
+_CONNECT_LOGIN = {
+    "claude": "claude  (구독 로그인)  또는  export ANTHROPIC_API_KEY=…",
+    "codex":  "codex login  (ChatGPT 구독)  또는  export OPENAI_API_KEY=…",
+    "gemini": "agy  (Antigravity 로그인)  또는  export GEMINI_API_KEY=…",
+    "grok":   "grok  (로그인)  또는  export XAI_API_KEY=…",
+    "local":  "ollama serve  (설치: https://ollama.com)",
+}
+_CONNECT_CMD = {
+    "claude": ["claude"],
+    "codex":  ["codex", "login"],
+    "gemini": ["agy"],
+    "grok":   ["grok"],
+    "local":  ["ollama", "serve"],
+}
+
+
+def connect_hint(pid: str, spec: dict) -> dict:
+    """How to connect one provider: first-party login + api-key env. Registry-
+    driven, with a generic fallback for providers not in the built-in map."""
+    cli = spec.get("cli")
+    login = _CONNECT_LOGIN.get(pid)
+    cmd = _CONNECT_CMD.get(pid) or ([cli] if cli else None)
+    if not login:
+        env = spec.get("api_key_env")
+        bits = []
+        if cli:
+            bits.append(f"{cli} 로그인")
+        if env:
+            bits.append(f"export {env}=…")
+        login = "  또는  ".join(bits) or "연결법 미정"
+    return {
+        "id": pid,
+        "label": spec.get("label", pid),
+        "login": login,
+        "cli": cli,
+        "cli_legacy": spec.get("cli_legacy"),
+        "api_key_env": spec.get("api_key_env"),
+        "cmd": cmd,
+        "note": spec.get("note"),
+    }
+
+
+def connect_command(pid: str, spec: dict) -> dict:
+    """Resolve the interactive login command for `effi connect <pid>`.
+    available=True only when the login binary is on PATH (else guide install)."""
+    h = connect_hint(pid, spec)
+    cmd = h.get("cmd") or []
+    binary = cmd[0] if cmd else None
+    return {
+        "id": pid,
+        "cmd": cmd,
+        "binary": binary,
+        "available": bool(binary and _which(binary)),
+        "login": h.get("login"),
+        "api_key_env": h.get("api_key_env"),
+    }
+
+
+def connect_report(probe: bool = False) -> dict:
+    """Preflight augmented with per-provider connect hints. Basis for
+    `effi connect`, the launcher welcome, and the SessionStart hook."""
+    provs = (load_providers().get("providers") or {})
+    rep = preflight(probe=probe)
+    for p in rep["providers"]:
+        p["hint"] = connect_hint(p["id"], provs.get(p["id"], {}))
+    rep["missing"] = [p["id"] for p in rep["providers"] if p["connection"] == "down"]
+    rep["partial"] = [p["id"] for p in rep["providers"] if p["connection"] == "partial"]
+    return rep
+
+
+def format_connect(rep: dict, intro: bool = False, action: bool = False) -> str:
+    """Human-readable onboarding view: (optional intro) + preflight table +
+    how-to-connect for anything not fully connected + (optional) an
+    [effi:action] block that asks the assistant to drive the flow."""
+    lines: list[str] = []
+    if intro:
+        lines += [onboarding_intro(), ""]
+    lines.append(format_preflight(rep))
+    todo = [p for p in rep["providers"]
+            if p["connection"] in ("down", "partial")]
+    if todo:
+        lines += ["", "  연결하기 (미연결/부분):"]
+        for p in todo:
+            icon = _CONN_ICON.get(p["connection"], "·")
+            h = p.get("hint") or {}
+            lines.append(f"   {icon} {p['id']:<7} {h.get('login','—')}")
+            if p["id"] != "local":
+                lines.append(f"       ↳ 바로 실행: effi connect {p['id']}")
+    else:
+        lines += ["", "  ✅ 모든 프로바이더 연결됨."]
+    if action:
+        lines += [
+            "",
+            "[effi:action] 온보딩 — 아래 순서로 진행하세요:",
+            "  1) effi-code가 뭔지 위 intro를 바탕으로 한두 줄로 소개합니다.",
+            "  2) 미연결(🔴)·부분(🟡) 프로바이더가 있으면 연결법을 안내하고, 사용자가",
+            "     원하면 `! effi connect <provider>`(또는 `! codex login` 등)로 로그인하도록",
+            "     도운 뒤 `effi connect --json`으로 재검사합니다.",
+            "  3) 이번 세션에 무슨 작업을 할지 물어 `effi mode suggest \"<답변>\"`로 추천받고,",
+            "     사용자가 고른 모드를 `effi mode set <apex|cruise|sip>`로 고정합니다.",
+        ]
+    return "\n".join(lines)
+
+
 # ── Usage ledger write side + provider management (Layer 2) ──────────
 
 def _models_provider_for(pid: str) -> str:

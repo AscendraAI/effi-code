@@ -95,6 +95,7 @@ claude                              # complete browser/device login, then quit
 ```sh
 cd /path/to/your-app
 effi init                 # tasks/ · CLAUDE.md · .effi/
+effi connect              # onboarding: intro + connect providers (connect <p> runs its login)
 effi mode ask             # pick Apex / Cruise / Sip (saved to this project)
 effi doctor               # health check (API keys not required)
 effi use "add rate-limit middleware + tests"
@@ -237,6 +238,7 @@ See [`docs/accounts.md`](docs/accounts.md).
 | `effi route "…"` | Task → model (mode-aware; may prompt on importance) |
 | `effi use "…"` | Route + how to run (`--exec` for Claude) |
 | `effi init` | Wire project: `tasks/`, `CLAUDE.md`, `.effi/` |
+| `effi connect` | Onboarding: effi-code intro + provider connect status; `effi connect <p>` runs that provider's own login (`codex login`, `agy`, …) |
 | `effi doctor` | Health check |
 | `effi new <name> [goal]` | Scaffold task folder under **project root** |
 | `effi log <name> <TAG> <msg>` | Append to `tasks/<name>/log.md` |

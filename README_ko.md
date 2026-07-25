@@ -95,6 +95,7 @@ claude                              # 브라우저/기기 로그인 후 종료
 ```sh
 cd /path/to/your-app
 effi init                 # tasks/ · CLAUDE.md · .effi/
+effi connect              # 온보딩: 소개 + 프로바이더 연결 (connect <p>는 로그인 실행)
 effi mode ask             # Apex / Cruise / Sip 선택 (이 프로젝트에 저장)
 effi doctor               # 상태 점검 (API 키 없어도 OK)
 effi use "레이트리밋 미들웨어 + 테스트 추가"
@@ -237,6 +238,7 @@ effi                             # 임계 미만 계정 선택
 | `effi route "…"` | 업무 → 모델 (모드 반영; 중요도 불일치 시 질문) |
 | `effi use "…"` | 라우팅 + 실행 방법 (`--exec` 시 Claude) |
 | `effi init` | 프로젝트 연결: `tasks/`, `CLAUDE.md`, `.effi/` |
+| `effi connect` | 온보딩: effi-code 소개 + 프로바이더 연결 상태; `effi connect <p>`는 해당 프로바이더 자체 로그인 실행 (`codex login`, `agy`, …) |
 | `effi doctor` | 상태 점검 |
 | `effi new <이름> [목표]` | **프로젝트 루트** 아래 작업 폴더 생성 |
 | `effi log <이름> <TAG> <메시지>` | `tasks/<이름>/log.md`에 append |

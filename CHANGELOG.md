@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.6.0 — 2026-07-25
+
+### Added — Onboarding & Guided Connect (Layer 0)
+- **`effi connect`** — session-start onboarding: explains what effi-code is
+  (`--intro`), shows live provider connection status, and guides connecting any
+  missing provider. `effi connect <provider>` runs that provider's **own**
+  first-party login in a TTY (`codex login`, `agy`, `claude`, `grok`,
+  `ollama serve`); if the login CLI isn't installed it prints install guidance.
+  `--json` lets the assistant re-check after the user logs in.
+- **SessionStart hook** now drives the full welcome when a project has **no
+  pinned mode** (not yet onboarded): intro + how-to-connect + an `[effi:action]`
+  block asking the assistant to introduce effi-code, help connect missing
+  providers, then ask the task and set the mode. Once pinned, it collapses to
+  the compact preflight table — no re-onboarding every session.
+- Core: `onboarding_intro`, `connect_hint`, `connect_command`,
+  `connect_report`, `format_connect`. 13 new hermetic tests (102 total).
+
+### Notes
+- ToS: connect only points to / runs each provider's native auth — it never
+  proxies subscription OAuth through a router (hard-no). Gemini interactive CLI
+  is `agy` (the legacy `gemini` CLI reached EOL 2026-06-18).
+- Design: `docs/02-design/onboarding-connect.md`.
+
 ## 4.5.0 — 2026-07-25
 
 ### Added — Model Transparency & Credit Advisor (3-layer)
