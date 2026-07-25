@@ -1,5 +1,33 @@
 # Changelog
 
+## 4.7.1 — 2026-07-26
+
+### Fixed — the launch screen was invisible
+- 4.7.0 emitted the screen on the SessionStart hook's **plain stdout**, on the
+  strength of the documented behaviour *"stdout is added as context that Claude
+  can see and act on"*. That's true and beside the point: Claude Code turns
+  hook stdout into a `hook_success` attachment flagged `isMeta`, which the
+  transcript **hides**. The model saw the screen; the user never did.
+- The hook now replies with JSON and splits the two audiences:
+  **`systemMessage`** (rendered to the user as `<hook> says: …`) carries the
+  panel plus the intro/connect guidance, and
+  **`hookSpecificOutput.additionalContext`** (context-only) carries the compact
+  preflight table plus the `[effi:action]` onboarding instructions — which are
+  addressed to the assistant and shouldn't have been on the user's screen
+  either. Net effect: the art now costs **zero** context tokens.
+- `systemMessage` is prefixed inline with `<hook> says: `, so the payload
+  starts with a newline; hook stdout is now pure JSON (output not starting with
+  `{` is silently treated as plain text and both fields are dropped).
+- `resume` / `compact` collapse to a one-line status (`splash_line`) instead of
+  the preflight table — the model still gets the full table. Any *other*
+  source, including ones a future Claude Code may add, renders the screen:
+  a new source is likelier a fresh start than a re-entry, and this feature
+  should fail toward visible.
+- Core: `hook_session_start_output`, `splash_line`, `onboarding_action`,
+  `QUIET_SOURCES`; `splash_data(pf=…)` reuses a preflight the caller already
+  ran. +7 tests (155 total) pinning the channel split, the leading newline,
+  pure-JSON stdout, and that `[effi:action]` never reaches the user.
+
 ## 4.7.0 — 2026-07-25
 
 ### Added — launch screen (`effi splash`)
@@ -12,17 +40,12 @@
   with the command that fixes them.
 - It renders from the **SessionStart hook**, not the launcher. Claude Code
   clears the terminal when it starts, so a screen printed before `exec claude`
-  flashes past unread — the only channel the user actually sees is the hook's
-  stdout, which Claude Code renders in the transcript. `effi` / `effi local`
-  keep their one-line banners, and say so once when the hook isn't wired
-  (`effi hooks install`).
-- By session source: `startup` / `clear` / `fork` get the full screen;
-  `resume` / `compact` get the compact preflight table (the art would be pure
-  tokens on a context re-read).
+  flashes past unread. `effi` / `effi local` keep their one-line banners, and
+  say so once when the hook isn't wired (`effi hooks install`).
+  (The channel this shipped with was wrong — see 4.7.1.)
 - `effi splash` prints it on demand (`--local --model M`, `--probe`, `--width`,
-  `--no-color`, `--json`). `EFFI_NO_SPLASH=1` falls back to the table,
-  `EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0` tune the hook's rendering, and
-  `NO_COLOR` / non-TTY stdout drop styling.
+  `--no-color`, `--json`). `EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0` tune the
+  hook's rendering, and `NO_COLOR` / non-TTY stdout drop styling.
 - Layout is width-aware: two columns ≥92 cols, stacked below, clamped to
   72–118 so it reads the same in a split pane and a maximised terminal.
   Alignment goes through a display-width helper (Hangul/emoji = 2 cells,

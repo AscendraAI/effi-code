@@ -1991,17 +1991,26 @@ def format_connect(rep: dict, intro: bool = False, action: bool = False,
     else:
         lines += ["", "  ✅ 모든 프로바이더 연결됨."]
     if action:
-        lines += [
-            "",
-            "[effi:action] 온보딩 — 아래 순서로 진행하세요:",
-            "  1) effi-code가 뭔지 위 intro를 바탕으로 한두 줄로 소개합니다.",
-            "  2) 미연결(🔴)·부분(🟡) 프로바이더가 있으면 연결법을 안내하고, 사용자가",
-            "     원하면 `! effi connect <provider>`(또는 `! codex login` 등)로 로그인하도록",
-            "     도운 뒤 `effi connect --json`으로 재검사합니다.",
-            "  3) 이번 세션에 무슨 작업을 할지 물어 `effi mode suggest \"<답변>\"`로 추천받고,",
-            "     사용자가 고른 모드를 `effi mode set <apex|cruise|sip>`로 고정합니다.",
-        ]
+        lines += ["", onboarding_action()]
     return "\n".join(lines)
+
+
+def onboarding_action() -> str:
+    """The [effi:action] block that asks the assistant to drive onboarding.
+
+    Split out because it is addressed to the *assistant*, not the user: the
+    SessionStart hook routes it to `additionalContext` while the human-facing
+    intro/connect text goes to `systemMessage`.
+    """
+    return "\n".join([
+        "[effi:action] 온보딩 — 아래 순서로 진행하세요:",
+        "  1) effi-code가 뭔지 위 intro를 바탕으로 한두 줄로 소개합니다.",
+        "  2) 미연결(🔴)·부분(🟡) 프로바이더가 있으면 연결법을 안내하고, 사용자가",
+        "     원하면 `! effi connect <provider>`(또는 `! codex login` 등)로 로그인하도록",
+        "     도운 뒤 `effi connect --json`으로 재검사합니다.",
+        "  3) 이번 세션에 무슨 작업을 할지 물어 `effi mode suggest \"<답변>\"`로 추천받고,",
+        "     사용자가 고른 모드를 `effi mode set <apex|cruise|sip>`로 고정합니다.",
+    ])
 
 
 # ── Launch splash (Layer 0.5: the face of effi-code) ─────────────────
@@ -2179,10 +2188,14 @@ def splash_data(
     session: Optional[str] = None,
     now: Optional[datetime] = None,
     tip_index: Optional[int] = None,
+    pf: Optional[dict] = None,
 ) -> dict:
-    """Everything the launch screen shows. `runtime` is cloud | local."""
+    """Everything the launch screen shows. `runtime` is cloud | local.
+
+    Pass `pf` to reuse a preflight()/connect_report() the caller already ran.
+    """
     now = now or datetime.now()
-    pf = preflight(probe=probe)
+    pf = pf if pf is not None else preflight(probe=probe)
     mode = pf.get("current_mode") or get_mode()
     cat = catalog_status()
     head = mode_headline_model(mode)
@@ -2348,6 +2361,70 @@ def format_splash(d: dict, width: Optional[int] = None, color: bool = True,
     if d.get("tip"):
         out.append(_color(f"✦ Tip: {d['tip']}", "dim", color))
     return "\n".join(out)
+
+
+def splash_line(d: dict) -> str:
+    """One-line status — used where the full panel would be noise (resume,
+    compaction), and cheap enough to show every time."""
+    c = d["counts"]
+    bits = [f"{d['mode'].get('emoji','')} {d['mode'].get('name','?')}",
+            d["headline"]["label"],
+            f"{c['connected']}/{c['providers']} providers"]
+    line = "effi · " + " · ".join(b for b in bits if b)
+    if d.get("warnings"):
+        line += f"   ⚠ {d['warnings'][0]}"
+    return line
+
+
+# Sources that re-enter an existing conversation: the user already saw the
+# screen, so re-rendering it is noise (and re-paid context). Everything else —
+# startup, clear, fork, and any source a future Claude Code adds — is treated
+# as a fresh start and gets the screen; failing toward visible is the point.
+QUIET_SOURCES = ("resume", "compact")
+
+
+def hook_session_start_output(
+    source: str = "startup",
+    width: int = 72,
+    wordmark: bool = True,
+    muted: bool = False,
+    probe: bool = False,
+) -> dict:
+    """Build the SessionStart hook's JSON reply.
+
+    Claude Code renders the two channels very differently, and the split
+    matters more than the layout does:
+
+      systemMessage  → shown to the user in the transcript ("… says: …")
+      additionalContext → added to Claude's context, never displayed
+
+    Plain stdout lands in context too, but as a *meta* attachment the user
+    never sees — which is why the screen has to go through systemMessage.
+    So: the panel and the human-facing connect guidance go to the user, the
+    compact table and the [effi:action] instructions go to the model.
+    """
+    rep = connect_report(probe=probe)
+    onboarded = project_mode_is_set()
+    full = (source or "startup") not in QUIET_SOURCES and not muted
+    d = splash_data(pf=rep)
+
+    shown = [format_splash(d, width=width, color=False, wordmark=wordmark)
+             if full else splash_line(d)]
+    context = [format_preflight(rep)]
+
+    if not onboarded:
+        # intro + how to connect anything missing → the user;
+        # the action block (addressed to the assistant) → the model
+        shown.append(format_connect(rep, intro=True, action=False, table=False))
+        context.append(onboarding_action())
+
+    return {
+        "systemMessage": "\n" + "\n".join(x for x in shown if x),
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "\n".join(context),
+        },
+    }
 
 
 # ── Usage ledger write side + provider management (Layer 2) ──────────

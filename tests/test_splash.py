@@ -7,6 +7,7 @@ panel is identical on a dev laptop and a bare CI runner.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -283,10 +284,76 @@ class HooksInstalledTests(unittest.TestCase):
             self.assertEqual(r["paths"], [])
 
 
-class SessionStartHookTests(unittest.TestCase):
-    """The launch screen is only ever seen because this hook emits it —
-    Claude Code clears the terminal over anything the launcher printed."""
+class HookChannelTests(unittest.TestCase):
+    """Claude Code shows `systemMessage` to the user and keeps
+    `additionalContext` for the model; plain stdout is a meta attachment the
+    user never sees. Getting the split wrong means an invisible screen."""
 
+    def test_screen_goes_to_the_user_and_the_table_to_the_model(self):
+        out = ec.hook_session_start_output(source="startup")
+        shown = out["systemMessage"]
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("╭─ effi-code v", shown)
+        self.assertIn("effi preflight", ctx)
+        self.assertNotIn("╭─ effi-code v", ctx)     # no art billed to context
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "SessionStart")
+
+    def test_system_message_starts_on_its_own_line(self):
+        # the renderer prefixes it with "<hook> says: " — without the newline
+        # the wordmark's first row would start mid-sentence
+        self.assertTrue(ec.hook_session_start_output()["systemMessage"].startswith("\n"))
+
+    def test_screen_carries_no_escape_codes(self):
+        self.assertNotIn("\x1b[", ec.hook_session_start_output()["systemMessage"])
+
+    def test_resume_and_compact_collapse_to_one_line(self):
+        for src in ("resume", "compact"):
+            out = ec.hook_session_start_output(source=src)
+            shown = out["systemMessage"].strip()
+            self.assertNotIn("╭─", shown)
+            self.assertIn("effi · ", shown)
+            self.assertEqual(len(shown.split("\n")), 1, src)
+            # the model still gets full status on a context re-read
+            self.assertIn("effi preflight", out["hookSpecificOutput"]["additionalContext"])
+
+    def test_clear_and_fork_get_the_screen(self):
+        for src in ("clear", "fork"):
+            self.assertIn("╭─ effi-code v",
+                          ec.hook_session_start_output(source=src)["systemMessage"])
+
+    def test_muting_collapses_to_one_line(self):
+        out = ec.hook_session_start_output(source="startup", muted=True)
+        self.assertNotIn("╭─", out["systemMessage"])
+        self.assertIn("effi · ", out["systemMessage"])
+
+    def test_width_and_wordmark_are_tunable(self):
+        out = ec.hook_session_start_output(width=88, wordmark=False)
+        shown = out["systemMessage"]
+        self.assertNotIn(EFFI_WORDMARK[0], shown)
+        panel = [l for l in shown.split("\n") if l.startswith("╭")]
+        self.assertEqual(_dwidth(panel[0]), 88)
+
+    def test_unknown_or_missing_source_fails_toward_visible(self):
+        # a source Claude Code adds later is more likely a start than a re-entry
+        for src in ("banana", "", None):
+            self.assertIn("╭─",
+                          ec.hook_session_start_output(source=src)["systemMessage"], src)
+
+    def test_onboarding_instructions_never_reach_the_user(self):
+        # the [effi:action] block is addressed to the assistant
+        with mock.patch.object(ec, "project_mode_is_set", lambda *a, **k: False):
+            out = ec.hook_session_start_output(source="startup")
+        self.assertIn("[effi:action]", out["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("[effi:action]", out["systemMessage"])
+        self.assertIn("effi-code —", out["systemMessage"])   # intro is for the user
+
+    def test_splash_line_is_short_and_actionable(self):
+        line = ec.splash_line(splash_data(tip_index=0))
+        self.assertLess(_dwidth(line), 110)
+        self.assertIn("effi · ", line)
+
+
+class SessionStartHookCliTests(unittest.TestCase):
     def _run(self, payload, **env):
         e = dict(os.environ, PYTHONPATH=str(ROOT / "lib"))
         e.pop("EFFI_NO_SPLASH", None)
@@ -297,42 +364,27 @@ class SessionStartHookTests(unittest.TestCase):
             env=e, cwd=str(ROOT), timeout=60,
         )
 
-    def test_startup_emits_the_launch_screen(self):
+    def test_stdout_is_pure_json(self):
+        # output that doesn't start with `{` is treated as plain text by the
+        # CLI, which would silently drop both channels
         r = self._run('{"source":"startup"}')
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("╭─ effi-code v", r.stdout)
-        self.assertIn("Providers", r.stdout)
-        self.assertNotIn("\x1b[", r.stdout)   # transcript renders text, not TTY
+        self.assertTrue(r.stdout.lstrip().startswith("{"))
+        d = json.loads(r.stdout)
+        self.assertIn("╭─ effi-code v", d["systemMessage"])
 
-    def test_resume_and_compact_stay_compact(self):
-        for src in ("resume", "compact"):
-            r = self._run('{"source":"%s"}' % src)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("effi preflight", r.stdout)
-            self.assertNotIn("╭─ effi-code v", r.stdout)
-
-    def test_clear_and_fork_get_the_screen_too(self):
-        for src in ("clear", "fork"):
-            self.assertIn("╭─ effi-code v", self._run('{"source":"%s"}' % src).stdout)
-
-    def test_muting_falls_back_to_the_table(self):
-        r = self._run('{"source":"startup"}', EFFI_NO_SPLASH="1")
-        self.assertIn("effi preflight", r.stdout)
-        self.assertNotIn("╭─ effi-code v", r.stdout)
-
-    def test_width_and_art_are_tunable(self):
-        r = self._run('{"source":"startup"}', EFFI_SPLASH_WIDTH="88",
-                      EFFI_SPLASH_ART="0")
-        self.assertNotIn(EFFI_WORDMARK[0], r.stdout)
-        panel = [l for l in r.stdout.split("\n") if l.startswith("╭")]
-        self.assertEqual(_dwidth(panel[0]), 88)
+    def test_env_knobs_reach_the_renderer(self):
+        d = json.loads(self._run('{"source":"startup"}', EFFI_SPLASH_WIDTH="88",
+                                 EFFI_SPLASH_ART="0").stdout)
+        self.assertNotIn(EFFI_WORDMARK[0], d["systemMessage"])
+        d = json.loads(self._run('{"source":"startup"}', EFFI_NO_SPLASH="1").stdout)
+        self.assertNotIn("╭─", d["systemMessage"])
 
     def test_malformed_or_missing_payload_still_renders(self):
         for payload in ("", "not json", "null"):
             r = self._run(payload)
             self.assertEqual(r.returncode, 0, r.stderr)
-            # no source → treated as startup
-            self.assertIn("effi-code v", r.stdout)
+            self.assertIn("effi-code v", json.loads(r.stdout)["systemMessage"])
 
 
 class CliTests(unittest.TestCase):

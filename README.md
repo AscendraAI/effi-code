@@ -145,10 +145,11 @@ model, what's connected, and what can I type next*:
 
 It renders from the **SessionStart hook** (`effi hooks install`), not from the
 launcher — Claude Code clears the terminal on start, so a screen printed before
-handing off would flash past unread. `resume` and `compact` get the compact
-preflight table instead, so a context re-read doesn't re-pay for the art.
+handing off would flash past unread. The hook sends the panel to the user and a
+compact provider table to Claude, so the art costs no context. Resuming or
+compacting collapses it to one line.
 
-`effi splash` prints it on demand · `EFFI_NO_SPLASH=1` falls back to the table ·
+`effi splash` prints it on demand · `EFFI_NO_SPLASH=1` collapses it ·
 `EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0` tune it.
 
 ---

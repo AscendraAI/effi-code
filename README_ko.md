@@ -145,10 +145,11 @@ effi log auth-rate COMPLETE "배포 완료"
 
 이 화면은 런처가 아니라 **SessionStart 훅**(`effi hooks install`)이 그립니다 —
 Claude Code가 시작하면서 터미널을 지우기 때문에, 넘기기 전에 찍으면 읽기도 전에
-사라집니다. `resume`·`compact`에서는 압축된 preflight 표만 나와서 컨텍스트를
-다시 읽을 때 아트 값을 또 치르지 않습니다.
+사라집니다. 훅은 패널을 사용자에게, 압축 프로바이더 표를 Claude에게 따로 보내므로
+아트는 컨텍스트를 한 토큰도 쓰지 않습니다. 재개(resume)·압축(compact) 시에는
+한 줄로 접힙니다.
 
-단독 실행 `effi splash` · 끄기 `EFFI_NO_SPLASH=1` ·
+단독 실행 `effi splash` · 접기 `EFFI_NO_SPLASH=1` ·
 `EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0`으로 조절.
 
 ---

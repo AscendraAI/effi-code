@@ -27,7 +27,7 @@ jobs:
           effi catalog status
           effi splash --width 100 --no-color | grep -q "effi-code v"
           effi splash --json | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['providers']"
-          echo '{"source":"startup"}' | bin/effi-hook-session-start | grep -q "effi-code v"
-          echo '{"source":"resume"}' | bin/effi-hook-session-start | grep -q "effi preflight"
+          echo '{"source":"startup"}' | bin/effi-hook-session-start \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'effi-code v' in d['systemMessage']; assert 'effi preflight' in d['hookSpecificOutput']['additionalContext']"
           effi-edit --help
           effi doctor --json | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'version' in d"

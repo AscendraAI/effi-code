@@ -24,17 +24,31 @@ The obvious place is `bin/effi`, right before `exec claude`. That doesn't work:
 launcher is drawn and wiped in the same instant. It has to come from *inside*
 the session.
 
-Claude Code's hook contract offers three channels:
+Claude Code's hook contract offers three channels, and they are **not**
+interchangeable. The docs describe what each field *is*; what matters here is
+what the renderer *does* with it:
 
-| Channel | Seen by user | Seen by model | Verdict |
-|---|---|---|---|
-| SessionStart plain stdout | ✅ rendered in transcript | ✅ added to context | **used** |
-| `systemMessage` | ✅ but documented only as "warning message" — no multi-line/box-art guarantee | ❌ | rejected: layout not contractual |
-| `hookSpecificOutput.additionalContext` | ❌ | ✅ | not user-visible |
+| Channel | Seen by user | Seen by model |
+|---|---|---|
+| `systemMessage` | ✅ rendered as `<hook> says: …` | ❌ |
+| `hookSpecificOutput.additionalContext` | ❌ | ✅ |
+| plain stdout | ❌ — becomes a `hook_success` attachment flagged `isMeta`, which the transcript hides | ✅ |
 
-So the splash goes to the SessionStart hook's stdout. The model seeing it too
-is a feature, not a leak — mode, connected providers, and warnings are exactly
-the state it should start with.
+The first attempt at this feature used plain stdout, on the strength of the
+docs line *"stdout is added as context that Claude can see and act on"*. True —
+and irrelevant to visibility. The screen never appeared; only the model saw it.
+The fix is the split above:
+
+- **user** → the panel, plus the intro and connect guidance when not onboarded
+- **model** → the compact preflight table, plus the `[effi:action]` onboarding
+  instructions (they're addressed to the assistant, so the user never sees them)
+
+Two consequences worth keeping in mind when editing:
+
+- `systemMessage` is prefixed inline with `<hook> says: `, so the payload
+  **starts with a newline** or the wordmark's first row begins mid-sentence.
+- stdout must be **only** JSON — output not starting with `{` is treated as
+  plain text and both fields are dropped silently.
 
 `effi` / `effi local` keep their one-line banners and print a single hint when
 the hook isn't wired (`hooks_installed()`), because otherwise the screen simply
@@ -42,15 +56,22 @@ never appears and there's nothing to explain why.
 
 ### Cost control
 
-The panel costs ~500 context tokens a session, so it isn't emitted blindly:
+The art is shown, not billed: it goes to `systemMessage`, which never enters
+context. The model always gets the same compact table either way. What the
+`source` split protects is the user's screen, not the token budget:
 
-| `source` | Output |
+| `source` | Shown to user |
 |---|---|
-| `startup`, `clear`, `fork` | full launch screen |
-| `resume`, `compact` | compact preflight table only |
+| `resume`, `compact` | one line (`effi · 🛣 Cruise · claude-sonnet-5 · 4/5 providers`) |
+| everything else | full launch screen |
 
-`EFFI_SPLASH_ART=0` drops the wordmark (~150 tokens), `EFFI_NO_SPLASH=1` falls
-back to the table everywhere.
+The quiet list is the *closed* set — `startup`, `clear`, `fork`, and any source
+a future Claude Code adds all render the screen. A new source is far more
+likely to be a fresh start than a re-entry, and failing toward visible is the
+whole point of this feature.
+
+`EFFI_SPLASH_ART=0` drops the wordmark, `EFFI_NO_SPLASH=1` collapses to the
+one-liner everywhere.
 
 ## Layers it reuses
 
@@ -99,13 +120,13 @@ the model that will actually answer.
 
 | Condition | Behaviour |
 |---|---|
-| `EFFI_NO_SPLASH=1` | compact preflight table instead |
+| `EFFI_NO_SPLASH=1` | one-line status instead |
 | SessionStart hook not wired | no screen; launcher says `effi hooks install` |
 | `NO_COLOR` / non-TTY (`effi splash`) | rendered, uncolored |
-| hook payload missing or malformed | treated as `startup` |
+| hook payload missing or malformed | treated as a fresh start |
 | provider registry missing | bundled `catalog/providers.example.json` |
 | corrupt ledger | `usage_summary()` skips bad lines; panel still renders |
-| anything raises | one honest line, never a failed session start |
+| anything raises | one honest line in `systemMessage`, never a failed start |
 
 The hook always renders `color=False`: Claude Code draws the hook's text in its
 transcript, so escape codes would surface as literal noise. Width defaults to
@@ -121,5 +142,8 @@ puts it in the stacked layout.
 - every command the panel advertises dispatches in `bin/effi`
   (`COMMAND_GROUPS` is the single source for the panel *and* the count)
 - `splash_data()` makes no API call unless `probe=True`
-- the hook emits the screen for `startup`/`clear`/`fork`, the table for
-  `resume`/`compact`, and never crashes on a malformed payload
+- the screen lands in `systemMessage` and the table in `additionalContext` —
+  never swapped, and the `[effi:action]` block never reaches the user
+- `systemMessage` starts with a newline; hook stdout is pure JSON
+- `resume`/`compact` collapse to one line, unknown sources render the screen,
+  and a malformed payload never crashes the hook
