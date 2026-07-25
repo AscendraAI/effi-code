@@ -31,7 +31,13 @@ OAuth 로그인은 본질상 대화형이라 완전 자동화가 불가능하다
 | local  | `ollama serve` | `ollama serve` |
 
 **하드-노**: 구독 OAuth를 라우터로 프록시하지 않는다. connect는 프로바이더 자체
-로그인 창구로만 안내한다. (`gemini` 대화형 CLI는 2026-06-18 사멸 → `agy`.)
+로그인 창구로만 안내한다.
+
+**정직성(v4.6.1)**: `gemini` 대화형 CLI는 2026-06-18 사멸했고, Antigravity는
+**IDE**로 배포된다(파이프형 `agy` CLI 아님). 그래서 gemini 힌트는 `agy` 존재
+여부에 따라 동적이다 — 있으면 `effi connect gemini`, 없으면 `GEMINI_API_KEY`
+(effi 라우팅) + 대화형은 Antigravity IDE 앱으로 안내하고 `agy CLI 미존재`를
+명시한다. 존재하지 않는 로그인 경로를 실측인 양 가리키지 않는다.
 
 ## 3. 아키텍처
 

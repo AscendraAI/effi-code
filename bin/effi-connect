@@ -60,8 +60,10 @@ PY
       REST="${OUT#INSTALL }"
       BINARY="${REST%%$'\t'*}"
       LOGIN="${REST#*$'\t'}"
-      echo "· $TARGET 로그인 CLI '${BINARY:-?}' 미설치 — 설치 후 다시: effi connect $TARGET" >&2
-      echo "  연결법: $LOGIN" >&2
+      # Honest: don't promise "install then re-run" (the login CLI may not exist
+      # as a simple install, e.g. gemini/agy). Point at the actual connect path.
+      echo "· $TARGET 로그인 CLI '${BINARY:-?}' 미설치 — 연결법:" >&2
+      echo "  $LOGIN" >&2
       exit 1 ;;
     EXEC)
       CMD="${OUT#EXEC }"

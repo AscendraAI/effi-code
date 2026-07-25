@@ -58,10 +58,19 @@ class ConnectHintTests(unittest.TestCase):
         self.assertEqual(h["cmd"], ["codex", "login"])
         self.assertEqual(h["api_key_env"], "OPENAI_API_KEY")
 
-    def test_gemini_points_to_agy_not_legacy(self):
-        h = connect_hint("gemini", self.provs["gemini"])
-        self.assertEqual(h["cmd"], ["agy"])
-        self.assertIn("agy", h["login"])
+    def test_gemini_hint_honest_about_agy(self):
+        # agy absent → lead with what actually works (API key + IDE app),
+        # and say plainly that the agy CLI does not exist.
+        with mock.patch.object(ec, "_which", _no_cli):
+            h = connect_hint("gemini", self.provs["gemini"])
+        self.assertEqual(h["cmd"], ["agy"])  # command mapping unchanged
+        self.assertIn("GEMINI_API_KEY", h["login"])
+        self.assertIn("Antigravity IDE", h["login"])
+        self.assertIn("agy CLI 미존재", h["login"])
+        # agy present → offer the login path
+        with mock.patch.object(ec, "_which", _all_cli):
+            h2 = connect_hint("gemini", self.provs["gemini"])
+        self.assertIn("effi connect gemini", h2["login"])
 
     def test_unknown_provider_generic_fallback(self):
         h = connect_hint("acme", {"cli": "acme", "api_key_env": "ACME_KEY"})
@@ -142,7 +151,18 @@ class FormatConnectTests(unittest.TestCase):
             rep = connect_report(probe=False)
         out = format_connect(rep)
         self.assertIn("연결하기", out)
-        self.assertIn("effi connect gemini", out)
+        # gemini down + agy absent → honest hint (API key), no false "바로 실행"
+        self.assertIn("GEMINI_API_KEY", out)
+        self.assertNotIn("↳ 바로 실행: effi connect gemini", out)
+
+    def test_run_line_shown_only_when_login_cli_present(self):
+        # codex with its CLI on PATH but no key → connected path uses oauth, so
+        # to force a todo row with login available we check the gating directly.
+        with mock.patch.object(ec, "_which", _no_cli):
+            rep = connect_report(probe=False)
+        for p in rep["providers"]:
+            self.assertIn("login_available", p)
+            self.assertFalse(p["login_available"])  # no CLIs on PATH
 
     def test_all_connected_shows_checkmark(self):
         for k in _KEYS:

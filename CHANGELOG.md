@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.6.1 — 2026-07-25
+
+### Fixed — honest Gemini connect hint
+- `connect_hint("gemini")` no longer points to a non-existent `agy` login when
+  the CLI is absent. Antigravity ships as an **IDE**, not a gemini-style pipe
+  CLI, so the hint now adapts: with `agy` on PATH it offers `effi connect
+  gemini`; without it, it leads with what actually works — `GEMINI_API_KEY` for
+  effi routing, and the Antigravity IDE app for interactive use — and says
+  plainly that the `agy` CLI does not exist.
+- `format_connect` shows the "↳ 바로 실행" line only when the login CLI is
+  actually present (`login_available`); otherwise it would just re-print
+  install guidance as noise.
+- `effi connect <p>`'s CLI-absent message no longer promises "install then
+  re-run" (misleading for phantom CLIs) — it points at the real connect path.
+- +1 test (103 total).
+
 ## 4.6.0 — 2026-07-25
 
 ### Added — Onboarding & Guided Connect (Layer 0)

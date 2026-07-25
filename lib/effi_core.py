@@ -1866,6 +1866,16 @@ def connect_hint(pid: str, spec: dict) -> dict:
         if env:
             bits.append(f"export {env}=…")
         login = "  또는  ".join(bits) or "연결법 미정"
+    # gemini: `agy` is Antigravity's assumed interactive CLI, but Antigravity
+    # ships as an IDE (no gemini-style pipe CLI). Be honest — surface the path
+    # that actually works: API key for effi routing, the IDE app for chat.
+    if pid == "gemini":
+        env = spec.get("api_key_env", "GEMINI_API_KEY")
+        if _which(cli) or _which(spec.get("cli_legacy")):
+            login = f"effi connect gemini  (agy 로그인)  ·  또는  export {env}=… (라우팅)"
+        else:
+            login = (f"export {env}=… (effi 라우팅용)  ·  "
+                     f"대화형은 Antigravity IDE 앱  (agy CLI 미존재)")
     return {
         "id": pid,
         "label": spec.get("label", pid),
@@ -1900,7 +1910,10 @@ def connect_report(probe: bool = False) -> dict:
     provs = (load_providers().get("providers") or {})
     rep = preflight(probe=probe)
     for p in rep["providers"]:
-        p["hint"] = connect_hint(p["id"], provs.get(p["id"], {}))
+        spec = provs.get(p["id"], {})
+        p["hint"] = connect_hint(p["id"], spec)
+        # can `effi connect <p>` actually launch a login now? (login CLI on PATH)
+        p["login_available"] = connect_command(p["id"], spec)["available"]
     rep["missing"] = [p["id"] for p in rep["providers"] if p["connection"] == "down"]
     rep["partial"] = [p["id"] for p in rep["providers"] if p["connection"] == "partial"]
     return rep
@@ -1922,7 +1935,10 @@ def format_connect(rep: dict, intro: bool = False, action: bool = False) -> str:
             icon = _CONN_ICON.get(p["connection"], "·")
             h = p.get("hint") or {}
             lines.append(f"   {icon} {p['id']:<7} {h.get('login','—')}")
-            if p["id"] != "local":
+            # only offer "바로 실행" when the login CLI is present — otherwise
+            # `effi connect <p>` just re-prints install guidance (noise). The
+            # honest login hint above is the actionable step in that case.
+            if p["id"] != "local" and p.get("login_available"):
                 lines.append(f"       ↳ 바로 실행: effi connect {p['id']}")
     else:
         lines += ["", "  ✅ 모든 프로바이더 연결됨."]
