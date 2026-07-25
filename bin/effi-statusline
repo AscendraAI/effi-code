@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# effi-statusline — Claude Code statusLine renderer (v4.5, Layer 3).
+# Shows: mode · active model · real session $cost · Claude 5h headroom ·
+# tightest budgeted provider. Also captures cost.total_cost_usd into the
+# usage ledger (stable official field — transcript parsing is NOT used).
+#
+# Wire in ~/.claude/settings.json:  "statusLine": {"type":"command","command":"<this>"}
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+# Read the CC payload from stdin FIRST (a heredoc'd `python3 - <<PY` would
+# otherwise take over stdin and the payload would be lost). Skip on a tty.
+if [ -t 0 ]; then RAW=""; else RAW="$(cat)"; fi
+
+RAW="$RAW" python3 - <<'PY'
+import os, json
+from effi_core import statusline_from_payload, statusline_text
+raw = os.environ.get("RAW", "")
+try:
+    payload = json.loads(raw) if raw.strip() else {}
+except Exception:
+    payload = {}
+try:
+    print(statusline_from_payload(payload) if payload else statusline_text())
+except Exception:
+    print("effi")  # a statusLine must never error a session
+PY

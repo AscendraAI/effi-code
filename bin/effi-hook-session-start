@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# effi-hook-session-start — Claude Code SessionStart hook (v4.5, Layer 3).
+# Emits a provider preflight summary as session context so the user sees which
+# providers are connected + a mode recommendation at the top of every session.
+#
+# Wire: "hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"<this>"}]}]}
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+python3 - <<'PY'
+# For SessionStart, plain stdout on exit 0 is added to the session context —
+# simpler and unambiguous vs guessing the JSON shape (and avoids double-inject).
+try:
+    from effi_core import preflight, format_preflight
+    print(format_preflight(preflight(probe=False)))
+except Exception as e:
+    print(f"effi preflight unavailable: {e}")
+PY

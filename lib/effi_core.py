@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -1471,6 +1472,15 @@ def doctor() -> dict:
 
     for cmd in ("codex", "gemini", "grok"):
         p = which(cmd)
+        if cmd == "gemini" and not p:
+            # gemini CLI EOL 2026-06-18 → Antigravity CLI (agy)
+            agy = which("agy")
+            detail = (
+                f"gemini EOL → agy at {agy}" if agy
+                else "gemini EOL 2026-06-18 → install agy (antigravity.google) or use GEMINI_API_KEY"
+            )
+            checks.append({"name": "cli:gemini", "ok": True, "detail": detail})
+            continue
         checks.append({"name": f"cli:{cmd}", "ok": True, "detail": p or "optional — not found"})
 
     # Ollama (optional unless you rely on local / effi local)
@@ -1560,6 +1570,638 @@ def doctor() -> dict:
         "project": str(proj),
         "checks": checks,
     }
+
+
+# ── Providers & preflight (Layer 1: connection + credit advisor) ─────
+# See docs/02-design/model-transparency-advisor.md
+# Connection = live probe (real). Credit = LOCAL USD ESTIMATE (never faked
+# as real-time balance — provider APIs mostly can't return remaining credit).
+
+CATALOG_PROVIDERS = ROOT / "catalog" / "providers.example.json"
+USER_PROVIDERS = CONFIG_DIR / "providers.json"
+USAGE_LEDGER = CONFIG_DIR / "usage-ledger.ndjson"
+
+_PROVIDER_BEST_FOR = {
+    "claude": "plan/impl/review",
+    "openai": "bulk/refactor",
+    "gemini": "design/research",
+    "grok": "research/realtime",
+    "local": "bulk/mechanical",
+}
+_CONN_ICON = {"connected": "🟢", "partial": "🟡", "down": "🔴"}
+
+
+def _which(cmd: Optional[str]) -> Optional[str]:
+    if not cmd:
+        return None
+    from shutil import which as w
+    return w(cmd)
+
+
+def load_providers() -> dict:
+    """User providers.json if present, else bundled example (works zero-config)."""
+    if USER_PROVIDERS.exists():
+        return _load_json(USER_PROVIDERS)
+    if CATALOG_PROVIDERS.exists():
+        return _load_json(CATALOG_PROVIDERS)
+    return {"schema_version": 1, "providers": {}}
+
+
+def model_price(models_provider: str, model_id: str) -> Optional[tuple]:
+    """(cost_in, cost_out) USD per 1M tokens from models.json, or None."""
+    cat = load_catalog()
+    prov = (cat.get("providers") or {}).get(models_provider) or {}
+    m = (prov.get("models") or {}).get(model_id)
+    if not m or m.get("cost_in") is None or m.get("cost_out") is None:
+        return None
+    return (float(m["cost_in"]), float(m["cost_out"]))
+
+
+def usage_summary(provider: Optional[str] = None, since: Optional[str] = None) -> dict:
+    """Read-only aggregate of the USD usage ledger.
+
+    Returns {provider: {"in","out","usd","events"}}. P1 ships the read side;
+    record_usage() (write side) lands in P2.
+    """
+    out: dict = {}
+    if not USAGE_LEDGER.exists():
+        return out
+    with open(USAGE_LEDGER, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+                p = ev.get("provider")
+                if not p:
+                    continue
+                if provider and p != provider:
+                    continue
+                if since and (ev.get("at") or "") < since:
+                    continue
+                agg = out.setdefault(p, {"in": 0, "out": 0, "usd": 0.0, "events": 0})
+                agg["in"] += int(ev.get("in") or 0)
+                agg["out"] += int(ev.get("out") or 0)
+                agg["usd"] += float(ev.get("est_usd") or 0)
+                agg["events"] += 1
+            except Exception:
+                # skip any malformed line (bad JSON OR non-numeric fields) —
+                # a corrupt ledger must never crash preflight/SessionStart
+                continue
+    return out
+
+
+def estimate_headroom(pid: str, spec: dict, summary: Optional[dict] = None) -> dict:
+    """USD-unified estimate. remaining_pct=None when unbudgeted or subscription."""
+    summ = summary if summary is not None else usage_summary()
+    used = float((summ.get(pid) or {}).get("usd") or 0.0)
+    budget = float(spec.get("budget_usd") or 0)
+    if spec.get("free"):
+        return {"kind": "free", "used_usd": round(used, 4), "budget_usd": None,
+                "remaining_usd": None, "remaining_pct": None}
+    if budget <= 0:
+        kind = "subscription" if spec.get("subscription") else "unbudgeted"
+        return {"kind": kind, "used_usd": round(used, 4), "budget_usd": None,
+                "remaining_usd": None, "remaining_pct": None}
+    remaining = max(0.0, budget - used)
+    return {"kind": "usd", "used_usd": round(used, 4), "budget_usd": budget,
+            "remaining_usd": round(remaining, 2),
+            "remaining_pct": round(100 * remaining / budget, 1)}
+
+
+def _probe_api_call(url: str, key_env: str, pid: str, timeout: float = 4.0) -> bool:
+    """Lightweight live reachability check (models list). Provider-specific auth."""
+    key = os.environ.get(key_env)
+    if not key:
+        return False
+    headers: dict = {}
+    target = url
+    if pid == "claude":
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    elif pid == "gemini":
+        sep = "&" if "?" in target else "?"
+        target = f"{target}{sep}key={key}"
+    else:  # codex/openai, grok/xai — bearer
+        headers = {"Authorization": f"Bearer {key}"}
+    try:
+        req = urllib.request.Request(target, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= getattr(r, "status", 200) < 300
+    except Exception:
+        return False
+
+
+def probe_provider(pid: str, spec: dict, do_call: bool = False) -> dict:
+    """Connection status: existence check + optional live API call.
+
+    🟢 connected: credential present (key, or oauth-cli) and reachable/unchecked
+    🟡 partial:   credential present but CLI missing / api-only / call failed
+    🔴 down:      no credential and no CLI
+    """
+    key_env = spec.get("api_key_env")
+    has_key = bool(key_env and os.environ.get(key_env))
+    cli, cli_legacy = spec.get("cli"), spec.get("cli_legacy")
+    cli_path = _which(cli)
+    legacy_path = _which(cli_legacy)
+    oauth = spec.get("cli_auth") in ("subscription_oauth", "google_oauth")
+
+    parts = []
+    if has_key:
+        parts.append("key")
+    if cli_path:
+        parts.append(f"cli:{cli}")
+    elif legacy_path:
+        parts.append(f"cli:{cli_legacy}(legacy)")
+
+    has_cred = has_key or (oauth and (cli_path or legacy_path))
+
+    api_ok = None
+    if do_call and has_key and spec.get("probe_api"):
+        api_ok = _probe_api_call(spec["probe_api"], key_env, pid)
+        parts.append("api ok" if api_ok else "api fail")
+
+    if not has_cred and not cli_path and not legacy_path:
+        conn = "down"
+    elif api_ok is False:
+        conn = "partial"
+    elif has_cred:
+        conn = "connected"
+    else:
+        conn = "partial"
+
+    # free local backend (Ollama): needs no credential — CLI present ⇒ usable
+    if spec.get("free") and (cli_path or legacy_path):
+        conn = "connected"
+
+    # gemini special-case: interactive CLI (gemini) EOL 2026-06-18 → agy.
+    # If neither agy nor legacy present but API key is, it's api-only (usable, 🟡).
+    if pid == "gemini" and not cli_path and not legacy_path and has_key:
+        conn = "partial"
+        parts.append("api-only (agy 미설치)")
+
+    return {"id": pid, "label": spec.get("label", pid), "connection": conn,
+            "detail": ", ".join(parts) or "no credential",
+            "cli": cli, "has_key": has_key, "api_ok": api_ok}
+
+
+def preflight(probe: bool = False, task_hint: Optional[str] = None) -> dict:
+    """Layer 1: check all providers + recommend a mode. Safe to run at SessionStart."""
+    provs = (load_providers().get("providers") or {})
+    summ = usage_summary()
+    results = []
+    for pid, spec in provs.items():
+        pr = probe_provider(pid, spec, do_call=probe)
+        pr["headroom"] = estimate_headroom(pid, spec, summ)
+        pr["best_for"] = _PROVIDER_BEST_FOR.get(spec.get("models_provider", pid), "—")
+        results.append(pr)
+    band = assess_task_importance(task_hint).get("band") if task_hint else None
+    return {"at": datetime.now().isoformat(timespec="minutes"),
+            "providers": results,
+            "mode_recommendation": recommend_mode(results, band),
+            "current_mode": get_mode()}
+
+
+def recommend_mode(providers: list, importance_band: Optional[str] = None) -> dict:
+    """Suggest a mode from connection health + estimated headroom + task band."""
+    by = {p["id"]: p for p in providers}
+    claude_up = (by.get("claude") or {}).get("connection") == "connected"
+    others_up = sum(1 for p in providers
+                    if p["id"] != "claude" and p.get("connection") != "down")
+    tight = any((p.get("headroom") or {}).get("remaining_pct") is not None
+                and p["headroom"]["remaining_pct"] < 15 for p in providers)
+    high = importance_band == "high"
+
+    if not claude_up and not others_up:
+        return {"mode": "sip", "reason": "연결된 클라우드 프로바이더 없음 → 로컬/저가 우선(Sip)"}
+    if tight:
+        return {"mode": "sip", "reason": "예산 여유 부족(추정 <15%) → 비용 최소 Sip 권장"}
+    if high and claude_up:
+        return {"mode": "apex", "reason": "고위험/고난도 작업 + Claude 여유 → 최고 성능 Apex"}
+    if claude_up:
+        return {"mode": "cruise", "reason": "Claude 연결 양호 + 보조 프로바이더 가용 → 균형 Cruise"}
+    return {"mode": "cruise", "reason": "기본 균형 운용"}
+
+
+def format_preflight(pf: dict) -> str:
+    lines = [f"effi preflight — {pf.get('at','')}", ""]
+    lines.append(f"  {'Provider':<11}{'Connection':<24}{'Usage (~추정)':<16}Best for")
+    lines.append("  " + "─" * 9 + "  " + "─" * 22 + "  " + "─" * 14 + "  " + "─" * 16)
+    for p in pf["providers"]:
+        icon = _CONN_ICON.get(p["connection"], "·")
+        hz = p.get("headroom") or {}
+        if hz.get("remaining_pct") is not None:
+            usage = f"~${hz['remaining_usd']:.2f}/${hz['budget_usd']:.0f}"
+        elif hz.get("kind") == "free":
+            usage = "무료(로컬)"
+        elif hz.get("kind") == "subscription":
+            usage = "~여유(구독)"
+        else:
+            usage = "~예산미설정"
+        lines.append(f"  {icon} {p['id']:<9}{p['detail']:<24}{usage:<16}{p.get('best_for','—')}")
+    rec = pf["mode_recommendation"]
+    cur = pf.get("current_mode") or {}
+    modes = {m["id"]: m for m in list_modes()}
+    rm = modes.get(rec["mode"], {})
+    lines += [
+        "",
+        f"  추천 모드: {rm.get('emoji','')} {rm.get('name', rec['mode'])}",
+        f"  근거: {rec['reason']}",
+        f"  현재: {cur.get('emoji','')} {cur.get('name','?')}   |   전환: effi mode set {rec['mode']}   |   상세: effi providers",
+    ]
+    return "\n".join(lines)
+
+
+# ── Usage ledger write side + provider management (Layer 2) ──────────
+
+def _models_provider_for(pid: str) -> str:
+    """Map a providers-registry key (codex/gemini/…) to its models.json
+    pricing provider (openai/gemini/…). Falls back to the key itself."""
+    spec = (load_providers().get("providers") or {}).get(pid) or {}
+    return spec.get("models_provider", pid)
+
+
+def record_usage(
+    provider: str,
+    model: str,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    task: Optional[str] = None,
+    session: Optional[str] = None,
+    est_usd: Optional[float] = None,
+) -> dict:
+    """Append one usage event to the USD ledger (append-only NDJSON).
+
+    est_usd is computed from models.json price (USD per 1M tokens) when not
+    given. Local/free models price to 0. This is the write side that makes
+    estimate_headroom() reflect real accumulated usage.
+    """
+    if est_usd is None:
+        price = model_price(_models_provider_for(provider), model)
+        if price:
+            ci, co = price
+            est_usd = (int(tokens_in or 0) / 1_000_000) * ci + (int(tokens_out or 0) / 1_000_000) * co
+        else:
+            est_usd = 0.0
+    ev = {
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "provider": provider,
+        "model": model,
+        "in": int(tokens_in or 0),
+        "out": int(tokens_out or 0),
+        "est_usd": round(float(est_usd), 6),
+    }
+    if task:
+        ev["task"] = task
+    if session:
+        ev["session"] = session
+    USAGE_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with open(USAGE_LEDGER, "a", encoding="utf-8") as f:
+        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    return ev
+
+
+def reset_ledger(archive: bool = True) -> Optional[Path]:
+    """Clear the usage ledger (optionally archiving it alongside). Use when a
+    budget window resets. Returns the archive path, or None if nothing to clear."""
+    if not USAGE_LEDGER.exists():
+        return None
+    if archive:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = USAGE_LEDGER.with_name(f"usage-ledger.{stamp}.ndjson")
+        n = 1
+        while dest.exists():  # never clobber an archive from the same second
+            dest = USAGE_LEDGER.with_name(f"usage-ledger.{stamp}.{n}.ndjson")
+            n += 1
+        USAGE_LEDGER.rename(dest)
+        return dest
+    USAGE_LEDGER.unlink()
+    return None
+
+
+def set_provider_budget(pid: str, usd: float) -> dict:
+    """Set budget_usd for a provider, persisting to the USER providers.json
+    (seeded from the bundled example on first write)."""
+    if usd < 0:
+        raise ValueError("budget must be >= 0")
+    data = load_providers()
+    provs = data.setdefault("providers", {})
+    if pid not in provs:
+        raise KeyError(f"unknown provider: {pid} (known: {', '.join(provs) or 'none'})")
+    provs[pid]["budget_usd"] = float(usd)
+    USER_PROVIDERS.parent.mkdir(parents=True, exist_ok=True)
+    _save_json(USER_PROVIDERS, data)
+    return provs[pid]
+
+
+def providers_detail(probe: bool = False) -> dict:
+    """Full per-provider view: connection + budget + used + estimated remaining."""
+    provs = (load_providers().get("providers") or {})
+    summ = usage_summary()
+    rows = []
+    for pid, spec in provs.items():
+        pr = probe_provider(pid, spec, do_call=probe)
+        rows.append({
+            **pr,
+            "headroom": estimate_headroom(pid, spec, summ),
+            "usage": summ.get(pid) or {"in": 0, "out": 0, "usd": 0.0, "events": 0},
+            "budget_usd": spec.get("budget_usd"),
+            "models_provider": spec.get("models_provider", pid),
+        })
+    total = round(sum(float((v or {}).get("usd") or 0) for v in summ.values()), 4)
+    return {"at": datetime.now().isoformat(timespec="minutes"),
+            "providers": rows, "total_usd": total,
+            "ledger": str(USAGE_LEDGER)}
+
+
+def format_providers(detail: dict) -> str:
+    lines = [f"effi providers — {detail.get('at','')}", ""]
+    lines.append(f"  {'Provider':<11}{'Connection':<22}{'Used':<12}{'Budget':<10}Remaining (~추정)")
+    lines.append("  " + "─" * 9 + "  " + "─" * 20 + "  " + "─" * 10 + "  " + "─" * 8 + "  " + "─" * 16)
+    for p in detail["providers"]:
+        icon = _CONN_ICON.get(p["connection"], "·")
+        hz = p.get("headroom") or {}
+        used = f"${float((p.get('usage') or {}).get('usd') or 0):.2f}"
+        budget = f"${p['budget_usd']:.0f}" if p.get("budget_usd") else "—"
+        if hz.get("remaining_pct") is not None:
+            remaining = f"~${hz['remaining_usd']:.2f} ({hz['remaining_pct']:.0f}%)"
+        elif hz.get("kind") == "free":
+            remaining = "무료(로컬)"
+        elif hz.get("kind") == "subscription":
+            remaining = "~여유(구독)"
+        else:
+            remaining = "~예산미설정"
+        ev = (p.get("usage") or {}).get("events") or 0
+        lines.append(f"  {icon} {p['id']:<9}{p['detail']:<22}{used:<12}{budget:<10}{remaining}  · {ev}건")
+    lines += [
+        "",
+        f"  누적 추정: ${detail.get('total_usd', 0):.2f}   |   원장: {detail.get('ledger')}",
+        "  예산 설정: effi providers budget <id> <usd>   |   초기화: effi providers reset",
+    ]
+    return "\n".join(lines)
+
+
+# ── Live advisor: statusline + mode nudge (Layer 3) ──────────────────
+
+def statusline_text(model: Optional[str] = None, cwd: Optional[str] = None) -> str:
+    """One-line status for a Claude Code statusLine: mode · active model ·
+    tightest provider headroom. `model` overrides the mode's default (the
+    statusLine payload knows the real active model)."""
+    m = get_mode()
+    parts = [f"{m.get('emoji','')} {m.get('id','?')}".strip()]
+    if not model:
+        pol = m.get("policy") or {}
+        model = pol.get("default_coding_model") or pol.get("coding_ceiling_model")
+    if model:
+        parts.append(model)
+    try:
+        provs = load_providers().get("providers") or {}
+        summ = usage_summary()
+        flags = []
+        for pid, spec in provs.items():
+            hz = estimate_headroom(pid, spec, summ)
+            if hz.get("remaining_pct") is not None:
+                tag = f"{pid} ~${hz['remaining_usd']:.0f}/{hz['budget_usd']:.0f}"
+                if hz["remaining_pct"] < 15:
+                    tag = "⚠ " + tag
+                flags.append(tag)
+        if flags:
+            parts.append(" ".join(flags[:2]))
+    except Exception:
+        pass  # statusline must never fail a session
+    return " · ".join(parts)
+
+
+@contextmanager
+def _state_lock():
+    """Exclusive lock around a state.json read-modify-write. statusLine is the
+    highest-frequency writer in the toolkit, so unsynchronized load→mutate→save
+    would let concurrent windows lose each other's updates. Best-effort: on a
+    platform without fcntl the body still runs (no lock)."""
+    lock_path = DEFAULT_STATE.with_name(DEFAULT_STATE.name + ".lock")
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        import fcntl
+        f = open(lock_path, "w")
+    except Exception:
+        yield  # locking unavailable — degrade to unlocked (still correct single-proc)
+        return
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(f, fcntl.LOCK_UN)
+        finally:
+            f.close()
+
+
+def record_session_cost(session_id: Optional[str], total_cost_usd, model: Optional[str] = None) -> dict:
+    """Capture real Claude session spend into the ledger from the statusLine
+    payload's ``cost.total_cost_usd`` — a STABLE official field (unlike the
+    transcript, which the docs say may change format between versions). Dedupes
+    via a per-session high-water mark so repeated statusLine refreshes only
+    record the increment.
+    """
+    try:
+        total = float(total_cost_usd)
+    except (TypeError, ValueError):
+        return {"recorded": False, "reason": "no cost"}
+    with _state_lock():
+        st = load_state()
+        marks = st.setdefault("session_cost", {})
+        sess = session_id or "default"
+        last = float(marks.get(sess) or 0.0)
+        delta = total - last
+        if delta <= 1e-6:  # no new spend since last refresh (or a reset/decrease)
+            return {"recorded": False, "delta": 0.0}
+        record_usage("claude", model or "claude", est_usd=round(delta, 6),
+                     task="session", session=sess)
+        marks.pop(sess, None)  # re-insert at end so dict order == recency
+        marks[sess] = total
+        if len(marks) > 20:  # bound growth: keep the 20 most-recently-touched
+            for k in list(marks)[:-20]:
+                marks.pop(k, None)
+        st["session_cost"] = marks
+        save_state(st)
+    return {"recorded": True, "delta": round(delta, 6)}
+
+
+def statusline_from_payload(payload: dict) -> str:
+    """Render a Claude Code statusLine from its stdin payload AND capture the real
+    Claude session cost into the ledger. Everything is best-effort — a statusLine
+    must never fail the session.
+    """
+    model_id = None
+    cost = payload.get("cost") or {}
+    try:
+        mo = payload.get("model") or {}
+        model_id = mo.get("id") or mo.get("display_name")
+        if cost.get("total_cost_usd") is not None:
+            record_session_cost(payload.get("session_id"), cost.get("total_cost_usd"), model_id)
+    except Exception:
+        pass
+
+    parts = []
+    m = get_mode()
+    parts.append(f"{m.get('emoji','')} {m.get('id','?')}".strip())
+    if model_id:
+        parts.append(model_id)
+    try:
+        if cost.get("total_cost_usd") is not None:
+            parts.append(f"${float(cost['total_cost_usd']):.2f}")
+    except Exception:
+        pass
+    try:  # real Claude subscription headroom (5h window), if surfaced
+        rl = (payload.get("rate_limits") or {}).get("five_hour") or {}
+        if rl.get("used_percentage") is not None:
+            parts.append(f"claude {max(0, 100 - float(rl['used_percentage'])):.0f}%↑5h")
+    except Exception:
+        pass
+    try:  # one non-claude budgeted provider, tightest first
+        provs = load_providers().get("providers") or {}
+        summ = usage_summary()
+        cand = []
+        for pid, spec in provs.items():
+            if pid == "claude":
+                continue
+            hz = estimate_headroom(pid, spec, summ)
+            if hz.get("remaining_pct") is not None:
+                cand.append((hz["remaining_pct"], pid, hz))
+        if cand:
+            _, pid, hz = min(cand)
+            tag = f"{pid} ~${hz['remaining_usd']:.0f}/{hz['budget_usd']:.0f}"
+            if hz["remaining_pct"] < 15:
+                tag = "⚠ " + tag
+            parts.append(tag)
+    except Exception:
+        pass
+    return " · ".join(parts)
+
+
+def nudge(task_hint: str, session: Optional[str] = None, min_turn_gap: int = 5) -> dict:
+    """Per-turn mode advisor. Suggests a mode switch when the task's importance
+    band doesn't fit the active mode, throttled to at most once per `min_turn_gap`
+    turns per session. State persists in ~/.config/effi/state.json under "nudge".
+    """
+    imp = assess_task_importance(task_hint or "")
+    cur = get_mode()
+    fit = mode_fit(cur["id"], imp["suggested_mode"], imp["band"])
+
+    with _state_lock():
+        st = load_state()
+        nd = st.setdefault("nudge", {})
+        sess = session or "default"
+        ss = nd.get(sess) or {"turns": 0, "last_nudge_turn": -(10 ** 9)}
+        ss["turns"] += 1
+        turn = ss["turns"]
+
+        suggestion = None
+        if not fit.get("ok") and (turn - ss["last_nudge_turn"]) >= min_turn_gap:
+            suggestion = {
+                "suggest_mode": imp["suggested_mode"],
+                "current_mode": cur["id"],
+                "band": imp["band"],
+                "mismatch": fit.get("mismatch"),
+                "reason": imp["reason"],
+            }
+            ss["last_nudge_turn"] = turn
+
+        nd.pop(sess, None)  # re-insert at end so dict order == recency
+        nd[sess] = ss
+        if len(nd) > 8:  # keep the 8 most-recently-touched sessions
+            for k in list(nd)[:-8]:
+                nd.pop(k, None)
+        st["nudge"] = nd
+        save_state(st)
+    return {"turn": turn, "suggestion": suggestion, "fit": fit,
+            "importance": imp, "current_mode": cur}
+
+
+def format_nudge(result: dict) -> str:
+    """Render a nudge suggestion as a short context line (empty if none)."""
+    s = result.get("suggestion")
+    if not s:
+        return ""
+    modes = {m["id"]: m for m in list_modes()}
+    tgt = modes.get(s["suggest_mode"], {})
+    curm = modes.get(s["current_mode"], {})
+    arrow = "⬆" if s.get("mismatch") == "underpowered" else "⬇"
+    return (
+        f"[effi] {arrow} 이 작업({s['band']})엔 "
+        f"{curm.get('emoji','')} {s['current_mode']}보다 "
+        f"{tgt.get('emoji','')} {s['suggest_mode']}가 적합 — {s['reason']}. "
+        f"전환: effi mode set {s['suggest_mode']}"
+    )
+
+
+def hooks_snippet() -> dict:
+    """The Claude Code settings.json fragment that wires effi's statusLine + hooks
+    (absolute paths to this install's bin/)."""
+    b = str(ROOT / "bin")
+    return {
+        "statusLine": {"type": "command", "command": f"{b}/effi-statusline"},
+        "hooks": {
+            "SessionStart": [
+                {"hooks": [{"type": "command", "command": f"{b}/effi-hook-session-start"}]}
+            ],
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": f"{b}/effi-hook-prompt"}]}
+            ],
+        },
+    }
+
+
+def install_hooks(settings_path: Optional[str] = None) -> dict:
+    """Merge effi's statusLine + hooks into a Claude Code settings.json without
+    clobbering existing keys. Backs up the original first. Idempotent — running
+    twice adds nothing the second time.
+    """
+    sp = Path(settings_path or os.path.expanduser("~/.claude/settings.json"))
+    original_text = sp.read_text(encoding="utf-8") if sp.exists() else None
+    try:
+        data = json.loads(original_text) if original_text else {}
+        if not isinstance(data, dict):
+            raise ValueError
+    except Exception:
+        return {"ok": False, "error": f"{sp} is not valid JSON — fix or move it first",
+                "path": str(sp)}
+
+    snip = hooks_snippet()
+    added = []
+
+    if not data.get("statusLine"):
+        data["statusLine"] = snip["statusLine"]
+        added.append("statusLine")
+
+    if not isinstance(data.get("hooks"), dict):  # tolerate null / [] / wrong type
+        data["hooks"] = {}
+    hooks = data["hooks"]
+    for ev, entries in snip["hooks"].items():
+        cmd = entries[0]["hooks"][0]["command"]
+        cur = hooks.setdefault(ev, [])
+        if not any(cmd in json.dumps(x, ensure_ascii=False) for x in cur):
+            cur.extend(entries)
+            added.append(ev)
+
+    if not added:
+        return {"ok": True, "added": [], "path": str(sp), "note": "already wired"}
+
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    backup = None
+    if original_text is not None:
+        backup = sp.with_name(sp.name + ".effi-bak")
+        n = 1
+        while backup.exists():
+            backup = sp.with_name(sp.name + f".effi-bak{n}")
+            n += 1
+        backup.write_text(original_text, encoding="utf-8")
+    # atomic write: never leave a half-written settings.json on a crash
+    tmp = sp.with_name(sp.name + ".effi-tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(sp)
+    return {"ok": True, "added": added, "path": str(sp),
+            "backup": str(backup) if backup else None}
 
 
 # ── CLI helpers ──────────────────────────────────────────────────────
@@ -1783,8 +2425,16 @@ def ollama_chat(
     url: Optional[str] = None,
     temperature: float = 0.2,
     timeout: int = 600,
+    record: Optional[dict] = None,
 ) -> str:
-    """Call Ollama /api/chat; return assistant content text."""
+    """Call Ollama /api/chat; return assistant content text.
+
+    If ``record`` is given (e.g. {"provider": "local", "task": "effi-edit"}),
+    append a usage event with the token counts Ollama reports. Local models are
+    free, so est_usd is 0 — this captures token *volume* for transparency. This
+    is the one cloud-vs-local call site effi runs in-process; cloud CLI sessions
+    are exec'd away and are captured via P3 hooks instead.
+    """
     if url is None:
         try:
             url = (load_config().get("local") or {}).get("ollama_url")
@@ -1805,6 +2455,18 @@ def ollama_chat(
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.load(r)
+    if record:
+        try:
+            record_usage(
+                provider=record.get("provider", "local"),
+                model=record.get("model", model),
+                tokens_in=int(d.get("prompt_eval_count") or 0),
+                tokens_out=int(d.get("eval_count") or 0),
+                task=record.get("task"),
+                session=record.get("session"),
+            )
+        except Exception:
+            pass  # usage recording must never break the actual edit
     msg = d.get("message") or {}
     return (msg.get("content") or d.get("response") or "").rstrip()
 
