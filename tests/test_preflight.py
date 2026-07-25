@@ -210,9 +210,19 @@ class PreflightIntegrationTests(unittest.TestCase):
         self._td = tempfile.mkdtemp()
         # point USER_PROVIDERS / USAGE_LEDGER at non-existent temp paths →
         # load_providers falls back to the bundled catalog example
+        #
+        # _which is patched too: without it, probe_provider would pick up
+        # whatever CLIs happen to be installed on the host, so mode
+        # recommendations (which gate Apex on a connected cloud provider) would
+        # differ between a dev laptop with `claude` installed and a bare CI
+        # runner. Simulate exactly one provider present — claude via its
+        # subscription-oauth CLI — so the environment is deterministic.
+        def _only_claude(cmd):
+            return "/usr/bin/claude" if cmd == "claude" else None
         self._patches = [
             mock.patch.object(ec, "USER_PROVIDERS", Path(self._td) / "no-providers.json"),
             mock.patch.object(ec, "USAGE_LEDGER", Path(self._td) / "no-ledger.ndjson"),
+            mock.patch.object(ec, "_which", _only_claude),
         ]
         for p in self._patches:
             p.start()
