@@ -17,12 +17,13 @@ try:
     # Hooks cannot pop an interactive menu, so when no mode is pinned for this
     # project we ask the ASSISTANT to prompt the user (with the recommendation).
     if not project_mode_is_set():
-        rec = pf.get("mode_recommendation") or {}
         print(
-            f"\n[effi:action] 이 프로젝트에 모드가 고정돼 있지 않습니다. "
-            f"세션을 시작하기 전에 사용자에게 어떤 모드(🚀Apex / 🛣Cruise / ☕Sip)로 "
-            f"진행할지 물어보고, 답을 받으면 `effi mode set <mode>`로 고정하세요. "
-            f"추천: {rec.get('mode','cruise')} — {rec.get('reason','')}"
+            "\n[effi:action] 이 프로젝트에 모드가 고정돼 있지 않습니다. 세션을 시작하기 전에:"
+            "\n  1) 사용자에게 이번 세션에 무슨 작업/프로젝트를 할지 물어보세요."
+            "\n  2) 답을 받으면 `effi mode suggest \"<사용자 답변>\"`을 실행해 추천을 받으세요"
+            "\n     (작업 중요도 + 프로바이더 연결·예산을 종합해 모드를 추천합니다)."
+            "\n  3) 추천을 제시하고, 사용자가 수락하거나 직접 고른 모드를 "
+            "`effi mode set <apex|cruise|sip>`로 고정하세요."
         )
 except Exception as e:
     print(f"effi preflight unavailable: {e}")

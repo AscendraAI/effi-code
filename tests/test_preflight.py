@@ -143,6 +143,14 @@ class RecommendModeTests(unittest.TestCase):
         provs = [self._p("claude", "connected"), self._p("codex", "partial")]
         self.assertEqual(recommend_mode(provs)["mode"], "cruise")
 
+    def test_low_band_suggests_sip(self):
+        provs = [self._p("claude", "connected"), self._p("codex", "connected", pct=90)]
+        self.assertEqual(recommend_mode(provs, importance_band="low")["mode"], "sip")
+
+    def test_no_band_stays_cruise(self):
+        provs = [self._p("claude", "connected")]
+        self.assertEqual(recommend_mode(provs)["mode"], "cruise")
+
 
 class LedgerAndPriceTests(unittest.TestCase):
     def test_usage_summary_empty_without_ledger(self):
@@ -234,6 +242,18 @@ class PreflightIntegrationTests(unittest.TestCase):
         out = format_preflight(pf)
         self.assertIn("effi preflight", out)
         self.assertIn("추천 모드", out)
+
+    def test_mode_suggestion_high_stakes_apex(self):
+        from effi_core import format_mode_suggestion
+        out = format_mode_suggestion("프로덕션 배포 전 보안 아키텍처 재설계")
+        self.assertIn("추천 모드", out)
+        self.assertIn("apex", out)
+        self.assertIn("effi mode set apex", out)
+
+    def test_mode_suggestion_bulk_sip(self):
+        from effi_core import format_mode_suggestion
+        out = format_mode_suggestion("40개 UI 문자열 번역")
+        self.assertIn("effi mode set sip", out)
 
 
 if __name__ == "__main__":

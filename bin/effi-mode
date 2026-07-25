@@ -132,6 +132,15 @@ print(f"changed:    {r.get('changed')}  skipped={r.get('skipped')}")
 print(f"fit:        {r['fit'].get('message')}")
 PY
     ;;
+  suggest|recommend)
+    TEXT="${ARGS[*]:-}"
+    [ -z "$TEXT" ] && { echo "usage: effi mode suggest \"what you're working on\"" >&2; exit 1; }
+    TEXT="$TEXT" python3 - <<'PY'
+import os
+from effi_core import format_mode_suggestion
+print(format_mode_suggestion(os.environ["TEXT"]))
+PY
+    ;;
   -h|--help|help)
     cat <<'EOF'
 effi mode — Apex / Cruise / Sip
@@ -141,6 +150,7 @@ effi mode — Apex / Cruise / Sip
   effi mode set <name> [--project|--global|--both]
   effi mode ask [--global]
   effi mode clear [--global|--both]
+  effi mode suggest "task…"  recommend a mode for what you're about to do
   effi mode check "task…"   assess importance, offer switch
 
 Resolution: EFFI_MODE → project .effi/mode → global → cruise

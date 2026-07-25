@@ -1778,6 +1778,8 @@ def recommend_mode(providers: list, importance_band: Optional[str] = None) -> di
         return {"mode": "sip", "reason": "예산 여유 부족(추정 <15%) → 비용 최소 Sip 권장"}
     if high and claude_up:
         return {"mode": "apex", "reason": "고위험/고난도 작업 + Claude 여유 → 최고 성능 Apex"}
+    if importance_band == "low" and (claude_up or others_up):
+        return {"mode": "sip", "reason": "저위험/기계적 작업 → 비용 최소 Sip이 효율적"}
     if claude_up:
         return {"mode": "cruise", "reason": "Claude 연결 양호 + 보조 프로바이더 가용 → 균형 Cruise"}
     return {"mode": "cruise", "reason": "기본 균형 운용"}
@@ -2133,6 +2135,34 @@ def format_nudge(result: dict) -> str:
         f"{tgt.get('emoji','')} {s['suggest_mode']}가 적합 — {s['reason']}. "
         f"전환: effi mode set {s['suggest_mode']}"
     )
+
+
+def format_mode_suggestion(task_text: str, probe: bool = False) -> str:
+    """Given what the user is about to work on, recommend a mode — combining task
+    importance (band/domain/grade) with live provider connection + estimated
+    headroom (via preflight) — and lay out all three choices so the user can
+    accept the pick or override it."""
+    pf = preflight(probe=probe, task_hint=task_text)
+    imp = assess_task_importance(task_text or "")
+    rec = pf["mode_recommendation"]
+    cur = pf["current_mode"]
+    modes = {m["id"]: m for m in list_modes()}
+    rm = modes.get(rec["mode"], {})
+    lines = [
+        f"작업: {task_text}",
+        f"  분석: 중요도 {imp['band']} · 영역 {imp['domain']} · 등급 {imp['grade']}",
+        "",
+        f"  추천 모드 → {rm.get('emoji','')} {rm.get('name', rec['mode'])} ({rec['mode']})",
+        f"  근거: {rec['reason']}",
+        f"  현재: {cur.get('emoji','')} {cur.get('name')} ({cur.get('id')}) · source={cur.get('source')}",
+        "",
+        "  선택지:",
+    ]
+    for m in list_modes():
+        star = "→" if m["id"] == rec["mode"] else " "
+        lines.append(f"   {star} [{m['number']}] {m.get('emoji','')} {m['name']:7} {m.get('tagline')}")
+    lines += ["", f"  고정: effi mode set <apex|cruise|sip>   (추천: effi mode set {rec['mode']})"]
+    return "\n".join(lines)
 
 
 def hooks_snippet() -> dict:
