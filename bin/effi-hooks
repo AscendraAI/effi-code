@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# effi-hooks — show or install the Claude Code settings.json wiring for
+# effi's statusLine + SessionStart + UserPromptSubmit hooks (v4.5, Layer 3).
+#
+#   effi hooks                 print the settings.json snippet
+#   effi hooks install         merge into ~/.claude/settings.json (backs up first)
+#   effi hooks install <path>  merge into a specific settings.json
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+SUB="${1:-show}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$SUB" in
+  -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+
+  install)
+    SETTINGS="${1:-}" python3 - <<'PY'
+import os
+from effi_core import install_hooks, print_json
+r = install_hooks(os.environ.get("SETTINGS") or None)
+if not r.get("ok"):
+    raise SystemExit(f"error: {r.get('error')}")
+if not r.get("added"):
+    print(f"✓ already wired: {r['path']}")
+else:
+    print(f"✓ wired {', '.join(r['added'])} → {r['path']}")
+    if r.get("backup"):
+        print(f"  backup: {r['backup']}")
+    print("  restart Claude Code to load the statusLine/hooks.")
+PY
+    ;;
+
+  show|*)
+    python3 - <<'PY'
+import json
+from effi_core import hooks_snippet
+print("# add to ~/.claude/settings.json (or run: effi hooks install)\n")
+print(json.dumps(hooks_snippet(), indent=2, ensure_ascii=False))
+PY
+    ;;
+esac

@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -1938,6 +1939,269 @@ def format_providers(detail: dict) -> str:
         "  예산 설정: effi providers budget <id> <usd>   |   초기화: effi providers reset",
     ]
     return "\n".join(lines)
+
+
+# ── Live advisor: statusline + mode nudge (Layer 3) ──────────────────
+
+def statusline_text(model: Optional[str] = None, cwd: Optional[str] = None) -> str:
+    """One-line status for a Claude Code statusLine: mode · active model ·
+    tightest provider headroom. `model` overrides the mode's default (the
+    statusLine payload knows the real active model)."""
+    m = get_mode()
+    parts = [f"{m.get('emoji','')} {m.get('id','?')}".strip()]
+    if not model:
+        pol = m.get("policy") or {}
+        model = pol.get("default_coding_model") or pol.get("coding_ceiling_model")
+    if model:
+        parts.append(model)
+    try:
+        provs = load_providers().get("providers") or {}
+        summ = usage_summary()
+        flags = []
+        for pid, spec in provs.items():
+            hz = estimate_headroom(pid, spec, summ)
+            if hz.get("remaining_pct") is not None:
+                tag = f"{pid} ~${hz['remaining_usd']:.0f}/{hz['budget_usd']:.0f}"
+                if hz["remaining_pct"] < 15:
+                    tag = "⚠ " + tag
+                flags.append(tag)
+        if flags:
+            parts.append(" ".join(flags[:2]))
+    except Exception:
+        pass  # statusline must never fail a session
+    return " · ".join(parts)
+
+
+@contextmanager
+def _state_lock():
+    """Exclusive lock around a state.json read-modify-write. statusLine is the
+    highest-frequency writer in the toolkit, so unsynchronized load→mutate→save
+    would let concurrent windows lose each other's updates. Best-effort: on a
+    platform without fcntl the body still runs (no lock)."""
+    lock_path = DEFAULT_STATE.with_name(DEFAULT_STATE.name + ".lock")
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        import fcntl
+        f = open(lock_path, "w")
+    except Exception:
+        yield  # locking unavailable — degrade to unlocked (still correct single-proc)
+        return
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(f, fcntl.LOCK_UN)
+        finally:
+            f.close()
+
+
+def record_session_cost(session_id: Optional[str], total_cost_usd, model: Optional[str] = None) -> dict:
+    """Capture real Claude session spend into the ledger from the statusLine
+    payload's ``cost.total_cost_usd`` — a STABLE official field (unlike the
+    transcript, which the docs say may change format between versions). Dedupes
+    via a per-session high-water mark so repeated statusLine refreshes only
+    record the increment.
+    """
+    try:
+        total = float(total_cost_usd)
+    except (TypeError, ValueError):
+        return {"recorded": False, "reason": "no cost"}
+    with _state_lock():
+        st = load_state()
+        marks = st.setdefault("session_cost", {})
+        sess = session_id or "default"
+        last = float(marks.get(sess) or 0.0)
+        delta = total - last
+        if delta <= 1e-6:  # no new spend since last refresh (or a reset/decrease)
+            return {"recorded": False, "delta": 0.0}
+        record_usage("claude", model or "claude", est_usd=round(delta, 6),
+                     task="session", session=sess)
+        marks.pop(sess, None)  # re-insert at end so dict order == recency
+        marks[sess] = total
+        if len(marks) > 20:  # bound growth: keep the 20 most-recently-touched
+            for k in list(marks)[:-20]:
+                marks.pop(k, None)
+        st["session_cost"] = marks
+        save_state(st)
+    return {"recorded": True, "delta": round(delta, 6)}
+
+
+def statusline_from_payload(payload: dict) -> str:
+    """Render a Claude Code statusLine from its stdin payload AND capture the real
+    Claude session cost into the ledger. Everything is best-effort — a statusLine
+    must never fail the session.
+    """
+    model_id = None
+    cost = payload.get("cost") or {}
+    try:
+        mo = payload.get("model") or {}
+        model_id = mo.get("id") or mo.get("display_name")
+        if cost.get("total_cost_usd") is not None:
+            record_session_cost(payload.get("session_id"), cost.get("total_cost_usd"), model_id)
+    except Exception:
+        pass
+
+    parts = []
+    m = get_mode()
+    parts.append(f"{m.get('emoji','')} {m.get('id','?')}".strip())
+    if model_id:
+        parts.append(model_id)
+    try:
+        if cost.get("total_cost_usd") is not None:
+            parts.append(f"${float(cost['total_cost_usd']):.2f}")
+    except Exception:
+        pass
+    try:  # real Claude subscription headroom (5h window), if surfaced
+        rl = (payload.get("rate_limits") or {}).get("five_hour") or {}
+        if rl.get("used_percentage") is not None:
+            parts.append(f"claude {max(0, 100 - float(rl['used_percentage'])):.0f}%↑5h")
+    except Exception:
+        pass
+    try:  # one non-claude budgeted provider, tightest first
+        provs = load_providers().get("providers") or {}
+        summ = usage_summary()
+        cand = []
+        for pid, spec in provs.items():
+            if pid == "claude":
+                continue
+            hz = estimate_headroom(pid, spec, summ)
+            if hz.get("remaining_pct") is not None:
+                cand.append((hz["remaining_pct"], pid, hz))
+        if cand:
+            _, pid, hz = min(cand)
+            tag = f"{pid} ~${hz['remaining_usd']:.0f}/{hz['budget_usd']:.0f}"
+            if hz["remaining_pct"] < 15:
+                tag = "⚠ " + tag
+            parts.append(tag)
+    except Exception:
+        pass
+    return " · ".join(parts)
+
+
+def nudge(task_hint: str, session: Optional[str] = None, min_turn_gap: int = 5) -> dict:
+    """Per-turn mode advisor. Suggests a mode switch when the task's importance
+    band doesn't fit the active mode, throttled to at most once per `min_turn_gap`
+    turns per session. State persists in ~/.config/effi/state.json under "nudge".
+    """
+    imp = assess_task_importance(task_hint or "")
+    cur = get_mode()
+    fit = mode_fit(cur["id"], imp["suggested_mode"], imp["band"])
+
+    with _state_lock():
+        st = load_state()
+        nd = st.setdefault("nudge", {})
+        sess = session or "default"
+        ss = nd.get(sess) or {"turns": 0, "last_nudge_turn": -(10 ** 9)}
+        ss["turns"] += 1
+        turn = ss["turns"]
+
+        suggestion = None
+        if not fit.get("ok") and (turn - ss["last_nudge_turn"]) >= min_turn_gap:
+            suggestion = {
+                "suggest_mode": imp["suggested_mode"],
+                "current_mode": cur["id"],
+                "band": imp["band"],
+                "mismatch": fit.get("mismatch"),
+                "reason": imp["reason"],
+            }
+            ss["last_nudge_turn"] = turn
+
+        nd.pop(sess, None)  # re-insert at end so dict order == recency
+        nd[sess] = ss
+        if len(nd) > 8:  # keep the 8 most-recently-touched sessions
+            for k in list(nd)[:-8]:
+                nd.pop(k, None)
+        st["nudge"] = nd
+        save_state(st)
+    return {"turn": turn, "suggestion": suggestion, "fit": fit,
+            "importance": imp, "current_mode": cur}
+
+
+def format_nudge(result: dict) -> str:
+    """Render a nudge suggestion as a short context line (empty if none)."""
+    s = result.get("suggestion")
+    if not s:
+        return ""
+    modes = {m["id"]: m for m in list_modes()}
+    tgt = modes.get(s["suggest_mode"], {})
+    curm = modes.get(s["current_mode"], {})
+    arrow = "⬆" if s.get("mismatch") == "underpowered" else "⬇"
+    return (
+        f"[effi] {arrow} 이 작업({s['band']})엔 "
+        f"{curm.get('emoji','')} {s['current_mode']}보다 "
+        f"{tgt.get('emoji','')} {s['suggest_mode']}가 적합 — {s['reason']}. "
+        f"전환: effi mode set {s['suggest_mode']}"
+    )
+
+
+def hooks_snippet() -> dict:
+    """The Claude Code settings.json fragment that wires effi's statusLine + hooks
+    (absolute paths to this install's bin/)."""
+    b = str(ROOT / "bin")
+    return {
+        "statusLine": {"type": "command", "command": f"{b}/effi-statusline"},
+        "hooks": {
+            "SessionStart": [
+                {"hooks": [{"type": "command", "command": f"{b}/effi-hook-session-start"}]}
+            ],
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": f"{b}/effi-hook-prompt"}]}
+            ],
+        },
+    }
+
+
+def install_hooks(settings_path: Optional[str] = None) -> dict:
+    """Merge effi's statusLine + hooks into a Claude Code settings.json without
+    clobbering existing keys. Backs up the original first. Idempotent — running
+    twice adds nothing the second time.
+    """
+    sp = Path(settings_path or os.path.expanduser("~/.claude/settings.json"))
+    original_text = sp.read_text(encoding="utf-8") if sp.exists() else None
+    try:
+        data = json.loads(original_text) if original_text else {}
+        if not isinstance(data, dict):
+            raise ValueError
+    except Exception:
+        return {"ok": False, "error": f"{sp} is not valid JSON — fix or move it first",
+                "path": str(sp)}
+
+    snip = hooks_snippet()
+    added = []
+
+    if not data.get("statusLine"):
+        data["statusLine"] = snip["statusLine"]
+        added.append("statusLine")
+
+    if not isinstance(data.get("hooks"), dict):  # tolerate null / [] / wrong type
+        data["hooks"] = {}
+    hooks = data["hooks"]
+    for ev, entries in snip["hooks"].items():
+        cmd = entries[0]["hooks"][0]["command"]
+        cur = hooks.setdefault(ev, [])
+        if not any(cmd in json.dumps(x, ensure_ascii=False) for x in cur):
+            cur.extend(entries)
+            added.append(ev)
+
+    if not added:
+        return {"ok": True, "added": [], "path": str(sp), "note": "already wired"}
+
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    backup = None
+    if original_text is not None:
+        backup = sp.with_name(sp.name + ".effi-bak")
+        n = 1
+        while backup.exists():
+            backup = sp.with_name(sp.name + f".effi-bak{n}")
+            n += 1
+        backup.write_text(original_text, encoding="utf-8")
+    # atomic write: never leave a half-written settings.json on a crash
+    tmp = sp.with_name(sp.name + ".effi-tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(sp)
+    return {"ok": True, "added": added, "path": str(sp),
+            "backup": str(backup) if backup else None}
 
 
 # ── CLI helpers ──────────────────────────────────────────────────────

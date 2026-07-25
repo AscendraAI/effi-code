@@ -154,10 +154,13 @@ Claude Code 커스텀 statusline 스크립트(`bin/effi-statusline`) 신설:
 - 조건: 현재 작업 중요도 밴드 vs 활성 프로바이더 추정 여유가 어긋나면 → "지금 X 모드가 더 적합합니다" 제안 + 근거.
 - 남용 방지: 같은 제안 쿨다운(예: 세션당 동일 제안 1회).
 
-### 7.3 훅 통합
-- **SessionStart** → `effi preflight`(요약 배너 주입).
-- **statusLine** → `effi-statusline`.
-- 배선 위치: `config/effi.config.example.json`의 `hooks` 블록 + 설치 시 사용자 `~/.claude/settings.json`에 안내.
+### 7.3 훅 통합 (계약 확인 후 수정 2026-07-24)
+- **statusLine** → `bin/effi-statusline`. stdin 페이로드에 **실데이터** 존재:
+  `model.id`, `cost.total_cost_usd`(실제 세션 USD), `rate_limits.five_hour.used_percentage`(실제 Claude 구독 사용률). 이걸로 Claude를 **추정이 아닌 실측**으로 표시하고, `cost.total_cost_usd` 델타를 원장에 기록해 **P2의 클라우드 캡처 갭을 메움**.
+- **SessionStart** → `bin/effi-hook-session-start`. stdin JSON 읽고 `{"additionalContext": "<preflight 요약>"}` 출력(exit 0).
+- **UserPromptSubmit** → `bin/effi-hook-prompt`. `user_input`으로 `nudge()` 호출, 제안 있으면 `{"additionalContext": "<넛지 라인>"}` 출력.
+- **Stop 훅 / transcript 파싱은 폐기.** 공식 문서가 transcript 포맷은 버전 간 변경되어 직접 파싱하면 깨진다고 명시 → 대신 statusLine의 안정적 `cost.total_cost_usd` 사용.
+- 배선: `config/effi.config.example.json` hooks 스니펫 + `effi hooks`가 `~/.claude/settings.json` 스니펫 출력·안내.
 
 ## 8. 코드 임팩트 맵
 
