@@ -14,7 +14,14 @@
 # ToS: never proxy subscription OAuth through third-party routers.
 set -euo pipefail
 
-BIN="$(cd "$(dirname "$0")" && pwd)"
+# Resolve symlinks so `effi` invoked via a PATH symlink still finds ROOT/lib
+SOURCE="${BASH_SOURCE[0]:-$0}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [ "${SOURCE#/}" = "$SOURCE" ] && SOURCE="$DIR/$SOURCE"
+done
+BIN="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 ROOT="$(cd "$BIN/.." && pwd)"
 export PATH="$BIN:$PATH"
 export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
