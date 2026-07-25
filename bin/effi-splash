@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# effi-splash — launch screen (v4.7)
+#
+#   effi splash                  the screen `effi` prints before Claude Code
+#   effi splash --local [model]  local-runtime variant
+#   effi splash --probe          live API reachability (slower)
+#   effi splash --width 100      force a width (default: terminal size)
+#   effi splash --no-color       plain text
+#   effi splash --json           machine-readable
+#
+# Skipped by the launcher when EFFI_NO_SPLASH=1 or stdout is not a TTY.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+PROBE=0; JSON=0; COLOR=1; WIDTH=""; RUNTIME="cloud"; MODEL=""; SESSION=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --probe|-p) PROBE=1 ;;
+    --json|-j) JSON=1 ;;
+    --no-color) COLOR=0 ;;
+    --local) RUNTIME="local" ;;
+    --cloud) RUNTIME="cloud" ;;
+    --model) MODEL="${2:-}"; shift ;;
+    --session) SESSION="${2:-}"; shift ;;
+    --width|-w) WIDTH="${2:-}"; shift ;;
+    -h|--help)
+      echo "usage: effi splash [--local [--model M]] [--probe] [--width N] [--no-color] [--json]"
+      exit 0 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# NO_COLOR (https://no-color.org) and non-TTY output disable styling
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then COLOR=0; fi
+
+PROBE="$PROBE" JSON="$JSON" COLOR="$COLOR" WIDTH="$WIDTH" \
+RUNTIME="$RUNTIME" MODEL="$MODEL" SESSION="$SESSION" python3 - <<'PY'
+import os
+from effi_core import splash_data, format_splash, print_json
+
+w = os.environ.get("WIDTH") or ""
+d = splash_data(
+    probe=os.environ.get("PROBE") == "1",
+    runtime=os.environ.get("RUNTIME") or "cloud",
+    model=os.environ.get("MODEL") or None,
+    session=os.environ.get("SESSION") or None,
+)
+if os.environ.get("JSON") == "1":
+    print_json(d)
+else:
+    print(format_splash(d, width=int(w) if w.isdigit() else None,
+                        color=os.environ.get("COLOR") == "1"))
+PY

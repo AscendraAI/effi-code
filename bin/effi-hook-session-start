@@ -1,26 +1,77 @@
 #!/usr/bin/env bash
-# effi-hook-session-start — Claude Code SessionStart hook (v4.5, Layer 3).
-# Emits a provider preflight summary as session context so the user sees which
-# providers are connected + a mode recommendation at the top of every session.
+# effi-hook-session-start — Claude Code SessionStart hook (v4.7, Layer 3).
+#
+# This is where the launch screen actually shows up. Claude Code clears the
+# terminal when it starts, so anything `effi` prints before exec'ing it is gone
+# before the user can read it — the screen has to be emitted from inside the
+# session. For SessionStart, plain stdout on exit 0 is rendered in the
+# transcript AND added to the session context, so one write serves both.
+#
+# By source:
+#   startup / clear / fork  → full launch screen (splash)
+#   resume / compact        → compact preflight table only (context was just
+#                             lost or re-read; the art would be pure tokens)
+#
+# Env: EFFI_SPLASH_WIDTH (default 72 — fits Claude Code's transcript gutter)
+#      EFFI_SPLASH_ART=0 drops the wordmark
+#      EFFI_NO_SPLASH=1  falls back to the preflight table everywhere
 #
 # Wire: "hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"<this>"}]}]}
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
-python3 - <<'PY'
-# For SessionStart, plain stdout on exit 0 is added to the session context —
-# simpler and unambiguous vs guessing the JSON shape (and avoids double-inject).
+
+# Claude Code delivers the event payload as JSON on stdin. When a human runs
+# this by hand there's no payload — don't block on a terminal read.
+PAYLOAD=""
+if [ ! -t 0 ]; then PAYLOAD="$(cat || true)"; fi
+
+EFFI_HOOK_PAYLOAD="$PAYLOAD" python3 - <<'PY'
+import json
+import os
+
 try:
-    from effi_core import connect_report, format_connect, format_preflight, project_mode_is_set
+    from effi_core import (
+        connect_report,
+        format_connect,
+        format_preflight,
+        format_splash,
+        project_mode_is_set,
+        splash_data,
+    )
+
+    try:
+        payload = json.loads(os.environ.get("EFFI_HOOK_PAYLOAD") or "{}") or {}
+    except Exception:
+        payload = {}
+    source = payload.get("source") or "startup"
+
+    width = os.environ.get("EFFI_SPLASH_WIDTH") or ""
+    width = int(width) if width.isdigit() else 72
+    art = os.environ.get("EFFI_SPLASH_ART", "1") != "0"
+    muted = os.environ.get("EFFI_NO_SPLASH") == "1"
+    full = source in ("startup", "clear", "fork") and not muted
+
     rep = connect_report(probe=False)
-    # Unpinned project = not yet onboarded → full welcome: intro + how-to-connect
-    # + an [effi:action] block asking the assistant to explain, help connect any
-    # missing providers, then ask the task and set the mode. Once pinned, this
-    # collapses to the compact preflight table (no re-onboarding every session).
-    if not project_mode_is_set():
-        print(format_connect(rep, intro=True, action=True))
+    onboarded = project_mode_is_set()
+
+    if full:
+        # color=False: the transcript renders the hook's text, not a raw TTY —
+        # escape codes would show up as literal noise.
+        print(format_splash(splash_data(runtime="cloud"), width=width,
+                            color=False, wordmark=art))
     else:
         print(format_preflight(rep))
+
+    if not onboarded:
+        # Not yet onboarded: how to connect anything missing + the [effi:action]
+        # block that asks the assistant to introduce effi, help connect, then
+        # pin a mode. The table is skipped when the splash already showed the
+        # same provider status.
+        print()
+        print(format_connect(rep, intro=True, action=True, table=not full))
 except Exception as e:
+    # A hook that raises would abort the session start banner entirely —
+    # degrade to one honest line instead.
     print(f"effi preflight unavailable: {e}")
 PY

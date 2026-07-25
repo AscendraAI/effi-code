@@ -1961,14 +1961,20 @@ def connect_report(probe: bool = False) -> dict:
     return rep
 
 
-def format_connect(rep: dict, intro: bool = False, action: bool = False) -> str:
+def format_connect(rep: dict, intro: bool = False, action: bool = False,
+                   table: bool = True) -> str:
     """Human-readable onboarding view: (optional intro) + preflight table +
     how-to-connect for anything not fully connected + (optional) an
-    [effi:action] block that asks the assistant to drive the flow."""
+    [effi:action] block that asks the assistant to drive the flow.
+
+    `table=False` drops the preflight table for callers that already showed the
+    same provider status (the launch splash) — don't print it twice.
+    """
     lines: list[str] = []
     if intro:
         lines += [onboarding_intro(), ""]
-    lines.append(format_preflight(rep))
+    if table:
+        lines.append(format_preflight(rep))
     todo = [p for p in rep["providers"]
             if p["connection"] in ("down", "partial")]
     if todo:
@@ -1996,6 +2002,352 @@ def format_connect(rep: dict, intro: bool = False, action: bool = False) -> str:
             "     사용자가 고른 모드를 `effi mode set <apex|cruise|sip>`로 고정합니다.",
         ]
     return "\n".join(lines)
+
+
+# ── Launch splash (Layer 0.5: the face of effi-code) ─────────────────
+# `effi` / `effi local` print one screen before handing off to Claude Code:
+# what am I running, on what model, what's connected, what can I type next.
+# splash_data() gathers, format_splash() lays out — both pure enough to unit
+# test without a terminal (no probing unless asked).
+
+# ANSI Shadow block font. Rendered above the panel when the terminal is wide
+# enough; narrower terminals fall back to a plain title line.
+EFFI_WORDMARK = [
+    "███████╗███████╗███████╗██╗        ██████╗ ██████╗ ██████╗ ███████╗",
+    "██╔════╝██╔════╝██╔════╝██║       ██╔════╝██╔═══██╗██╔══██╗██╔════╝",
+    "█████╗  █████╗  █████╗  ██║ █████╗██║     ██║   ██║██║  ██║█████╗  ",
+    "██╔══╝  ██╔══╝  ██╔══╝  ██║ ╚════╝██║     ██║   ██║██║  ██║██╔══╝  ",
+    "███████╗██║     ██║     ██║       ╚██████╗╚██████╔╝██████╔╝███████╗",
+    "╚══════╝╚═╝     ╚═╝     ╚═╝        ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
+]
+
+# Road-to-horizon mark (all single-width box chars — safe to align).
+EFFI_MARK = [
+    "╲                ╱",
+    " ╲   ▁▂▃▄▅▆▇   ╱ ",
+    "  ╲  ████████  ╱  ",
+    "   ╲ ██▔▔▔▔██ ╱   ",
+    "    ╲████████╱    ",
+    "     ╲██▔▔██╱     ",
+    "      ╲████╱      ",
+    "       ╲██╱       ",
+]
+
+# Command surface, grouped. Single source of truth for the panel *and* the
+# command count — add a subcommand here when you add it to bin/effi.
+COMMAND_GROUPS: list[tuple[str, list[str]]] = [
+    ("세션", ["cloud", "local", "status", "doctor", "init", "splash"]),
+    ("연결·비용", ["connect", "preflight", "providers", "accounts",
+                   "hooks", "statusline"]),
+    ("라우팅", ["mode", "route", "use", "pick", "classify"]),
+    ("작업", ["new", "run", "edit", "review", "log", "catalog"]),
+]
+
+SPLASH_TIPS = [
+    "effi route \"작업 설명\" — 도메인·등급을 보고 최적 모델을 고릅니다.",
+    "effi mode set apex — 이 프로젝트를 최고 성능으로 고정합니다 (.effi/mode).",
+    "effi mode set sip — 로컬/저가 우선. 번역·docstring 같은 기계적 작업에.",
+    "effi edit <file> \"지시\" — 로컬 모델이 사이드카에 쓰고, 검토 후 반영합니다.",
+    "effi providers budget claude 20 — 예산을 넣으면 잔여 추정이 정확해집니다.",
+    "effi preflight --probe — 연결을 실제 API 호출로 확인합니다.",
+    "EFFI_NO_SPLASH=1 effi — 이 시작 화면을 건너뜁니다.",
+]
+
+_SPLASH_MIN_W, _SPLASH_MAX_W = 72, 118
+_SPLASH_TWO_COL_W = 92   # below this, the panel stacks into one column
+
+_ANSI = {
+    "reset": "\x1b[0m", "bold": "\x1b[1m", "dim": "\x1b[2m",
+    "cyan": "\x1b[36m", "yellow": "\x1b[33m",
+}
+
+
+def _dwidth(s: str) -> int:
+    """Terminal display width: CJK/emoji count 2, combining marks 0.
+
+    east_asian_width covers Hangul and most emoji; the explicit ≥U+1F300 test
+    catches pictographs (🛣, ⚠︎-style) that Unicode still calls Neutral but
+    every modern terminal renders double-wide.
+    """
+    import unicodedata
+
+    w = 0
+    for ch in s:
+        if unicodedata.combining(ch) or ch in "️︎‍":
+            continue
+        cp = ord(ch)
+        if unicodedata.east_asian_width(ch) in ("W", "F") or 0x1F300 <= cp <= 0x1FAFF:
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _dtrim(s: str, width: int) -> str:
+    """Truncate to a display width, ellipsising when it doesn't fit."""
+    if _dwidth(s) <= width:
+        return s
+    out, w = "", 0
+    for ch in s:
+        cw = _dwidth(ch)
+        if w + cw > max(0, width - 1):
+            break
+        out += ch
+        w += cw
+    return out + "…"
+
+
+def _dpad(s: str, width: int) -> str:
+    s = _dtrim(s, width)
+    return s + " " * max(0, width - _dwidth(s))
+
+
+def _color(s: str, style: Optional[str], enabled: bool) -> str:
+    if not enabled or not style:
+        return s
+    codes = "".join(_ANSI.get(p, "") for p in style.split())
+    return f"{codes}{s}{_ANSI['reset']}" if codes else s
+
+
+def mode_headline_model(mode: Optional[dict] = None) -> dict:
+    """The model this mode leads with for coding work — what the splash shows.
+
+    Apex pins a top model, Sip pins a ceiling (local runs below it), Cruise
+    has no pin and inherits the routing table's `implement` primary.
+    """
+    m = mode or get_mode()
+    pol = m.get("policy") or {}
+    prov = pol.get("default_coding_provider")
+    model = pol.get("default_coding_model")
+    prefix = ""
+    if not model and pol.get("coding_ceiling_model"):
+        model = pol["coding_ceiling_model"]
+        prov = pol.get("coding_ceiling_provider")
+        prefix = "≤ "
+    if not model:
+        prim = ((load_routing().get("domains") or {}).get("implement") or {}).get(
+            "primary"
+        ) or {}
+        prov, model = prim.get("provider"), prim.get("model")
+    return {"provider": prov, "model": model, "prefix": prefix,
+            "label": f"{prefix}{model}" if model else "—",
+            "local_first": bool(pol.get("cascade") == "local_first")}
+
+
+def new_session_id(now: Optional[datetime] = None) -> str:
+    """Timestamped launch id — shown in the splash, useful in bug reports."""
+    now = now or datetime.now()
+    return now.strftime("%Y%m%d_%H%M%S") + "_" + os.urandom(2).hex()
+
+
+def _wrap_cell(text: str, width: int, indent: int = 0) -> list[str]:
+    """Word-wrap to a display width, hanging-indenting continuation lines.
+    Long unbreakable tokens are trimmed rather than allowed to overflow."""
+    if _dwidth(text) <= width:
+        return [text]
+    # keep the caller's own leading indent on the first line — splitting on " "
+    # would otherwise drop it as empty words and unalign the row
+    stripped = text.lstrip(" ")
+    lead = " " * (len(text) - len(stripped))
+    pad = " " * indent
+    lines: list[str] = []
+    cur = ""
+    for word in (w for w in stripped.split(" ") if w):
+        if not cur:
+            cur = (lead if not lines else pad) + word
+            continue
+        cand = cur + " " + word
+        if _dwidth(cand) <= width:
+            cur = cand
+        else:
+            lines.append(cur)
+            cur = pad + word
+    if cur:
+        lines.append(cur)
+    return [_dtrim(x, width) for x in lines]
+
+
+def _abbrev_path(p: str) -> str:
+    home = os.path.expanduser("~")
+    return "~" + p[len(home):] if p.startswith(home) else p
+
+
+def splash_data(
+    probe: bool = False,
+    runtime: str = "cloud",
+    model: Optional[str] = None,
+    session: Optional[str] = None,
+    now: Optional[datetime] = None,
+    tip_index: Optional[int] = None,
+) -> dict:
+    """Everything the launch screen shows. `runtime` is cloud | local."""
+    now = now or datetime.now()
+    pf = preflight(probe=probe)
+    mode = pf.get("current_mode") or get_mode()
+    cat = catalog_status()
+    head = mode_headline_model(mode)
+    if model:
+        head = dict(head, model=model, prefix="", label=model)
+
+    provs = []
+    for p in pf["providers"]:
+        hz = p.get("headroom") or {}
+        if hz.get("remaining_pct") is not None:
+            usage = f"~${hz['remaining_usd']:.2f}/${hz['budget_usd']:.0f}"
+        elif hz.get("kind") == "free":
+            usage = "무료"
+        elif hz.get("kind") == "subscription":
+            usage = "구독"
+        else:
+            usage = "예산미설정"
+        provs.append({
+            "id": p["id"], "connection": p["connection"],
+            "icon": _CONN_ICON.get(p["connection"], "·"),
+            "detail": p.get("detail") or "", "usage": usage,
+            "best_for": p.get("best_for") or "—",
+        })
+
+    warnings, notes = [], []
+    if cat.get("stale"):
+        warnings.append("카탈로그 재검토 기한 지남 — effi catalog research → bump")
+    else:
+        notes.append(f"카탈로그 재검토 예정 {cat.get('next_review_due') or '—'}")
+    down = [p["id"] for p in provs if p["connection"] == "down"]
+    if down:
+        warnings.append(f"미연결: {', '.join(down)} — effi connect {down[0]}")
+    if not project_mode_is_set():
+        warnings.append("이 프로젝트 모드 미고정 — effi mode set cruise")
+
+    tips = SPLASH_TIPS
+    idx = tip_index if tip_index is not None else now.timetuple().tm_yday
+    ncmds = sum(len(c) for _, c in COMMAND_GROUPS)
+
+    return {
+        "at": now.isoformat(timespec="seconds"),
+        "version": version(),
+        "catalog": cat,
+        "mode": mode,
+        "runtime": runtime,
+        "headline": head,
+        "project": str(project_root()),
+        "cwd": os.getcwd(),
+        "session": session or new_session_id(now),
+        "providers": provs,
+        "groups": [{"name": n, "commands": c} for n, c in COMMAND_GROUPS],
+        "counts": {
+            "commands": ncmds,
+            "providers": len(provs),
+            "connected": sum(1 for p in provs if p["connection"] == "connected"),
+            "modes": len(list_modes()),
+        },
+        "warnings": warnings,
+        "notes": notes,
+        "tip": tips[idx % len(tips)] if tips else "",
+        "recommendation": pf.get("mode_recommendation") or {},
+    }
+
+
+def _splash_left(d: dict, width: int) -> list[tuple[str, Optional[str]]]:
+    mode = d["mode"]
+    rt = "LOCAL · Ollama" if d["runtime"] == "local" else "CLOUD · Claude Code"
+    rows: list[tuple[str, Optional[str]]] = []
+    if width >= 20:
+        pad = " " * max(0, (width - 18) // 2)
+        rows += [(pad + line, "cyan dim") for line in EFFI_MARK]
+        rows.append(("", None))
+    rows += [
+        (f"{mode.get('emoji','')} {mode.get('name','?')} · {d['headline']['label']}",
+         "bold"),
+        (rt, "dim"),
+        (_abbrev_path(d["project"]), "dim"),
+        (f"Session: {d['session']}", "dim"),
+    ]
+    return rows
+
+
+def _splash_right(d: dict, width: int) -> list[tuple[str, Optional[str]]]:
+    rows: list[tuple[str, Optional[str]]] = [("Providers", "bold")]
+    for p in d["providers"]:
+        detail = f"{p['detail']} · {p['usage']}"
+        rows.append((f"{p['icon']} {p['id']:<8}{_dtrim(detail, max(8, width - 11))}",
+                     None))
+    rows.append(("", None))
+    rows.append(("Commands", "bold"))
+    for g in d["groups"]:
+        line = f"  {g['name']}: {', '.join(g['commands'])}"
+        rows += [(x, None) for x in _wrap_cell(line, width, indent=4)]
+    rows.append(("", None))
+    rows.append((
+        "  " + " · ".join(f"{m.get('emoji','')} {m['name']}" for m in list_modes())
+        + f"   (현재 {d['mode'].get('name','?')})", "dim"))
+    c = d["counts"]
+    rows.append((
+        f"  {c['commands']} commands · {c['connected']}/{c['providers']} providers "
+        f"connected · effi help", "dim"))
+    for w in d["warnings"]:
+        rows += [(x, "yellow") for x in _wrap_cell(f"  ⚠ {w}", width, indent=4)]
+    for n in d["notes"]:
+        rows += [(x, "dim") for x in _wrap_cell(f"  · {n}", width, indent=4)]
+    return rows
+
+
+def format_splash(d: dict, width: Optional[int] = None, color: bool = True,
+                  wordmark: bool = True) -> str:
+    """Render the launch screen. Width is clamped to a readable range so the
+    panel looks the same in a narrow pane and a maximised terminal."""
+    if width is None:
+        try:
+            import shutil
+
+            width = shutil.get_terminal_size((100, 24)).columns
+        except Exception:
+            width = 100
+    width = max(_SPLASH_MIN_W, min(_SPLASH_MAX_W, int(width)))
+    inner = width - 4  # "│ " + content + " │"
+
+    out: list[str] = []
+    mark = _dwidth(EFFI_WORDMARK[0])
+    if not wordmark:
+        pass
+    elif width >= mark + 2:
+        pad = " " * ((width - mark) // 2)
+        out += [_color(pad + line, "cyan", color) for line in EFFI_WORDMARK]
+        out.append("")
+    else:
+        out += [_color("effi-code", "bold cyan", color), ""]
+
+    title = (f" effi-code v{d['version']} · catalog {d['catalog'].get('catalog_version','?')}"
+             f" · {d['mode'].get('emoji','')} {d['mode'].get('name','?')} ")
+    title = _dtrim(title, inner)
+    bar = "─" * max(0, width - 2 - 1 - _dwidth(title))
+    out.append(_color(f"╭─{title}{bar}╮", "cyan", color))
+
+    if width >= _SPLASH_TWO_COL_W:
+        left_w = min(32, max(24, inner - 46))
+        gap = 3
+        right_w = inner - left_w - gap
+        left = _splash_left(d, left_w)
+        right = _splash_right(d, right_w)
+        for i in range(max(len(left), len(right))):
+            lt, ls = left[i] if i < len(left) else ("", None)
+            rt, rs = right[i] if i < len(right) else ("", None)
+            cell = (_color(_dpad(lt, left_w), ls, color) + " " * gap
+                    + _color(_dpad(rt, right_w), rs, color))
+            out.append(_color("│ ", "cyan", color) + cell + _color(" │", "cyan", color))
+    else:
+        stacked = _splash_left(d, 0) + [("", None)] + _splash_right(d, inner)
+        for txt, style in stacked:
+            out.append(_color("│ ", "cyan", color)
+                       + _color(_dpad(txt, inner), style, color)
+                       + _color(" │", "cyan", color))
+
+    out.append(_color("╰" + "─" * (width - 2) + "╯", "cyan", color))
+    out.append("")
+    out.append("작업을 말하면 도메인·등급을 보고 최적 모델로 라우팅합니다. "
+               "규칙: ORCHESTRATION.md")
+    if d.get("tip"):
+        out.append(_color(f"✦ Tip: {d['tip']}", "dim", color))
+    return "\n".join(out)
 
 
 # ── Usage ledger write side + provider management (Layer 2) ──────────
@@ -2364,6 +2716,31 @@ def hooks_snippet() -> dict:
             ],
         },
     }
+
+
+def hooks_installed(settings_paths: Optional[list] = None) -> dict:
+    """Is effi's SessionStart hook wired into Claude Code?
+
+    The launch screen renders from that hook (Claude Code clears the terminal
+    on start, so anything the launcher prints beforehand is never seen). If the
+    hook is missing the user gets no screen at all — the launcher says so.
+    """
+    if settings_paths is None:
+        proj = project_root()
+        settings_paths = [
+            Path(os.path.expanduser("~/.claude/settings.json")),
+            proj / ".claude" / "settings.json",
+            proj / ".claude" / "settings.local.json",
+        ]
+    found = []
+    for p in settings_paths:
+        try:
+            text = Path(p).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        if "effi-hook-session-start" in text:
+            found.append(str(p))
+    return {"session_start": bool(found), "paths": found}
 
 
 def install_hooks(settings_path: Optional[str] = None) -> dict:

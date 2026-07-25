@@ -110,6 +110,47 @@ effi review -o tasks/auth-rate/workers/review
 effi log auth-rate COMPLETE "shipped"
 ```
 
+### The launch screen
+
+Every session opens with one screen that answers *what am I running, on what
+model, what's connected, and what can I type next*:
+
+```
+      ███████╗███████╗███████╗██╗        ██████╗ ██████╗ ██████╗ ███████╗
+      ██╔════╝██╔════╝██╔════╝██║       ██╔════╝██╔═══██╗██╔══██╗██╔════╝
+      █████╗  █████╗  █████╗  ██║ █████╗██║     ██║   ██║██║  ██║█████╗
+      ██╔══╝  ██╔══╝  ██╔══╝  ██║ ╚════╝██║     ██║   ██║██║  ██║██╔══╝
+      ███████╗██║     ██║     ██║       ╚██████╗╚██████╔╝██████╔╝███████╗
+      ╚══════╝╚═╝     ╚═╝     ╚═╝        ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
+
+╭─ effi-code v4.7.0 · catalog 2026.07.21 · 🛣 Cruise ──────────────────╮
+│ 🛣 Cruise · claude-sonnet-5                                          │
+│ CLOUD · Claude Code                                                  │
+│ ~/your-app                                                           │
+│ Session: 20260725_235537_8380                                        │
+│                                                                      │
+│ Providers                                                            │
+│ 🟢 claude  cli:claude · 구독                                          │
+│ 🔴 gemini  no credential · 예산미설정                                  │
+│                                                                      │
+│ Commands                                                             │
+│   세션: cloud, local, status, doctor, init, splash                    │
+│   라우팅: mode, route, use, pick, classify                            │
+│                                                                      │
+│   🚀 Apex · 🛣 Cruise · ☕ Sip   (현재 Cruise)                         │
+│   23 commands · 4/5 providers connected · effi help                  │
+│   ⚠ 미연결: gemini — effi connect gemini                              │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+It renders from the **SessionStart hook** (`effi hooks install`), not from the
+launcher — Claude Code clears the terminal on start, so a screen printed before
+handing off would flash past unread. `resume` and `compact` get the compact
+preflight table instead, so a context re-read doesn't re-pay for the art.
+
+`effi splash` prints it on demand · `EFFI_NO_SPLASH=1` falls back to the table ·
+`EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0` tune it.
+
 ---
 
 ## Modes (Apex · Cruise · Sip)
@@ -232,8 +273,9 @@ See [`docs/accounts.md`](docs/accounts.md).
 
 | Command | Purpose |
 |---------|---------|
-| `effi` / `effi cloud` | Claude Code session (mode banner + account select) |
+| `effi` / `effi cloud` | Claude Code session (launch screen + account select) |
 | `effi local` | Claude Code on Ollama (MCP stripped for small models) |
+| `effi splash` | The launch screen on demand (`EFFI_NO_SPLASH=1` mutes it) |
 | `effi mode …` | Show / set / ask / check Apex·Cruise·Sip |
 | `effi route "…"` | Task → model (mode-aware; may prompt on importance) |
 | `effi use "…"` | Route + how to run (`--exec` for Claude) |

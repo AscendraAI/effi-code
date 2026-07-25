@@ -5,6 +5,9 @@
 #   effi hooks                 print the settings.json snippet
 #   effi hooks install         merge into ~/.claude/settings.json (backs up first)
 #   effi hooks install <path>  merge into a specific settings.json
+#
+# SessionStart is what renders the launch screen (`effi splash`) inside the
+# session — without it wired, no screen appears.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
@@ -13,7 +16,7 @@ SUB="${1:-show}"
 [ "$#" -gt 0 ] && shift || true
 
 case "$SUB" in
-  -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 
   install)
     SETTINGS="${1:-}" python3 - <<'PY'

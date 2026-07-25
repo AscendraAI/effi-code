@@ -1,5 +1,44 @@
 # Changelog
 
+## 4.7.0 — 2026-07-25
+
+### Added — launch screen (`effi splash`)
+- Every session now opens with a single screen: ANSI-block wordmark + a panel
+  carrying **runtime & headline model** (mode-aware — Apex's pinned top model,
+  Sip's ceiling, Cruise's routing primary), **live provider connection +
+  credit estimate**, the **command surface grouped by job**, the three modes
+  with the active one marked, project path, and a session id. Warnings
+  (unconnected provider, stale catalog, unpinned project mode) render inline
+  with the command that fixes them.
+- It renders from the **SessionStart hook**, not the launcher. Claude Code
+  clears the terminal when it starts, so a screen printed before `exec claude`
+  flashes past unread — the only channel the user actually sees is the hook's
+  stdout, which Claude Code renders in the transcript. `effi` / `effi local`
+  keep their one-line banners, and say so once when the hook isn't wired
+  (`effi hooks install`).
+- By session source: `startup` / `clear` / `fork` get the full screen;
+  `resume` / `compact` get the compact preflight table (the art would be pure
+  tokens on a context re-read).
+- `effi splash` prints it on demand (`--local --model M`, `--probe`, `--width`,
+  `--no-color`, `--json`). `EFFI_NO_SPLASH=1` falls back to the table,
+  `EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0` tune the hook's rendering, and
+  `NO_COLOR` / non-TTY stdout drop styling.
+- Layout is width-aware: two columns ≥92 cols, stacked below, clamped to
+  72–118 so it reads the same in a split pane and a maximised terminal.
+  Alignment goes through a display-width helper (Hangul/emoji = 2 cells,
+  variation selectors = 0) instead of `len()`, and long lines wrap with a
+  hanging indent rather than truncating.
+- Core: `splash_data`, `format_splash`, `mode_headline_model`,
+  `new_session_id`, `hooks_installed`, `COMMAND_GROUPS`, `SPLASH_TIPS`,
+  `_dwidth`/`_dtrim`/`_dpad`/`_wrap_cell`; `format_connect(table=…)` so the
+  onboarding path doesn't print provider status twice. +40 tests (148 total),
+  including a panel-geometry invariant at five widths, per-`source` hook
+  behaviour, and a check that every command the panel advertises actually
+  dispatches in `bin/effi`.
+
+### Notes
+- Design: `docs/02-design/launch-splash.md`.
+
 ## 4.6.2 — 2026-07-25
 
 ### Added — local-driver guardrail

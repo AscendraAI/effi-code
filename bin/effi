@@ -41,6 +41,16 @@ ensure_ollama() {
   fi
 }
 
+splash_hint() {
+  # The launch screen renders from the SessionStart hook — Claude Code clears
+  # the terminal on start, so printing it here would flash past unread. Say so
+  # once when the hook isn't wired, otherwise the screen just never appears.
+  [ "${EFFI_NO_SPLASH:-0}" != "1" ] && [ -t 1 ] || return 0
+  if ! python3 -c 'import sys;from effi_core import hooks_installed;sys.exit(0 if hooks_installed()["session_start"] else 1)' 2>/dev/null; then
+    echo "  · 시작 화면은 세션 안에서 뜹니다 — 아직 미연결: effi hooks install"
+  fi
+}
+
 apply_cloud_account() {
   # Rotate Claude account if configured; ignore if none
   if [ -f "$HOME/.config/effi/accounts.json" ]; then
@@ -85,12 +95,13 @@ case "$MODE" in
       echo "  · pulling $LOCAL_MODEL …"
       ollama pull "$LOCAL_MODEL" || true
     fi
+    echo "▶ LOCAL · $LOCAL_MODEL · narrow tasks only · MCP off"
+    splash_hint
     export ANTHROPIC_BASE_URL="$OLLAMA_URL"
     export ANTHROPIC_API_KEY="ollama"
     export ANTHROPIC_MODEL="$LOCAL_MODEL"
     export ANTHROPIC_SMALL_FAST_MODEL="$LOCAL_MODEL"
     export OLLAMA_KEEP_ALIVE="30m"
-    echo "▶ LOCAL · $LOCAL_MODEL · narrow tasks only · MCP off"
     exec claude --strict-mcp-config "$@"
     ;;
   cloud)
@@ -113,6 +124,7 @@ else:
 PY
     apply_cloud_account
     echo "▶ CLOUD · rules: ORCHESTRATION.md + catalog routing"
+    splash_hint
     if command -v claude >/dev/null 2>&1; then
       exec claude "$@"
     else
@@ -156,6 +168,7 @@ PY
   review) exec "$BIN/effi-review" "$@" ;;
   init) exec "$BIN/effi-init" "$@" ;;
   doctor) exec "$BIN/effi-doctor" "$@" ;;
+  splash|banner|welcome) exec "$BIN/effi-splash" "$@" ;;
   preflight|pre) exec "$BIN/effi-preflight" "$@" ;;
   connect|onboard) exec "$BIN/effi-connect" "$@" ;;
   providers|prov) exec "$BIN/effi-providers" "$@" ;;
@@ -179,6 +192,7 @@ Modes (pick anytime)
 Sessions
   effi [cloud]             Claude cloud (asks mode if unset)
   effi local               Ollama local backend
+  effi splash              the launch screen (EFFI_NO_SPLASH=1 to mute)
   effi status · doctor · init
   effi connect             onboarding: intro + connect providers (connect <p> logs in)
   effi preflight           provider connection + credit advisor (--probe)
@@ -196,7 +210,7 @@ Rules: ORCHESTRATION.md  Modes: catalog/modes.json
 EOF
     ;;
   *)
-    echo "usage: effi [cloud|local|mode|status|doctor|connect|preflight|providers|hooks|statusline|init|route|use|log|accounts|catalog|pick|run|edit|new|review|help]" >&2
+    echo "usage: effi [cloud|local|mode|status|doctor|connect|splash|preflight|providers|hooks|statusline|init|route|use|log|accounts|catalog|pick|run|edit|new|review|help]" >&2
     exit 1
     ;;
 esac

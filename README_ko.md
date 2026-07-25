@@ -110,6 +110,47 @@ effi review -o tasks/auth-rate/workers/review
 effi log auth-rate COMPLETE "배포 완료"
 ```
 
+### 시작 화면
+
+세션을 열면 한 장짜리 화면이 먼저 뜹니다 — **지금 어떤 런타임·모델로 도는지,
+무엇이 연결됐는지, 다음에 뭘 칠 수 있는지**.
+
+```
+      ███████╗███████╗███████╗██╗        ██████╗ ██████╗ ██████╗ ███████╗
+      ██╔════╝██╔════╝██╔════╝██║       ██╔════╝██╔═══██╗██╔══██╗██╔════╝
+      █████╗  █████╗  █████╗  ██║ █████╗██║     ██║   ██║██║  ██║█████╗
+      ██╔══╝  ██╔══╝  ██╔══╝  ██║ ╚════╝██║     ██║   ██║██║  ██║██╔══╝
+      ███████╗██║     ██║     ██║       ╚██████╗╚██████╔╝██████╔╝███████╗
+      ╚══════╝╚═╝     ╚═╝     ╚═╝        ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
+
+╭─ effi-code v4.7.0 · catalog 2026.07.21 · 🛣 Cruise ──────────────────╮
+│ 🛣 Cruise · claude-sonnet-5                                          │
+│ CLOUD · Claude Code                                                  │
+│ ~/your-app                                                           │
+│ Session: 20260725_235537_8380                                        │
+│                                                                      │
+│ Providers                                                            │
+│ 🟢 claude  cli:claude · 구독                                          │
+│ 🔴 gemini  no credential · 예산미설정                                  │
+│                                                                      │
+│ Commands                                                             │
+│   세션: cloud, local, status, doctor, init, splash                    │
+│   라우팅: mode, route, use, pick, classify                            │
+│                                                                      │
+│   🚀 Apex · 🛣 Cruise · ☕ Sip   (현재 Cruise)                         │
+│   23 commands · 4/5 providers connected · effi help                  │
+│   ⚠ 미연결: gemini — effi connect gemini                              │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+이 화면은 런처가 아니라 **SessionStart 훅**(`effi hooks install`)이 그립니다 —
+Claude Code가 시작하면서 터미널을 지우기 때문에, 넘기기 전에 찍으면 읽기도 전에
+사라집니다. `resume`·`compact`에서는 압축된 preflight 표만 나와서 컨텍스트를
+다시 읽을 때 아트 값을 또 치르지 않습니다.
+
+단독 실행 `effi splash` · 끄기 `EFFI_NO_SPLASH=1` ·
+`EFFI_SPLASH_WIDTH` / `EFFI_SPLASH_ART=0`으로 조절.
+
 ---
 
 ## 모드 (Apex · Cruise · Sip)
@@ -232,8 +273,9 @@ effi                             # 임계 미만 계정 선택
 
 | 명령 | 용도 |
 |------|------|
-| `effi` / `effi cloud` | Claude Code 세션 (모드 배너 + 계정 선택) |
+| `effi` / `effi cloud` | Claude Code 세션 (시작 화면 + 계정 선택) |
 | `effi local` | Ollama 위 Claude Code (소형 모델용 MCP 차단) |
+| `effi splash` | 시작 화면 단독 실행 (`EFFI_NO_SPLASH=1`이면 끔) |
 | `effi mode …` | Apex·Cruise·Sip 표시 / 설정 / 질문 / 점검 |
 | `effi route "…"` | 업무 → 모델 (모드 반영; 중요도 불일치 시 질문) |
 | `effi use "…"` | 라우팅 + 실행 방법 (`--exec` 시 Claude) |
