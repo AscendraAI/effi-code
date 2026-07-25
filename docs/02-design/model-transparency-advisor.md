@@ -183,7 +183,9 @@ Claude Code 커스텀 statusline 스크립트(`bin/effi-statusline`) 신설:
 - **P0 (설계)** — 본 문서 ✅ (commit 71c4e8d)
 - **P1 (Layer 1)** ✅ — providers.json + `preflight()`/`probe_provider`/`recommend_mode` + `bin/effi-preflight` + doctor agy 폴백 + 20 테스트 + clean-context 리뷰 반영 (commit bf51ff5). `usage_summary`/`estimate_headroom` 읽기측도 선반영.
 - **P2 (Layer 2)** ✅ — `record_usage`(USD 계산) + `effi providers`(budget/record/reset) + `ollama_chat` 로컬 기록 훅 + local/free 프로바이더 + 14 테스트 + clean-context 리뷰 반영 (commit e34e3de).
-- **P3 (Layer 3)** — statusline(`bin/effi-statusline`) + 주기 넛지 + **SessionStart/Stop 훅 배선**(클라우드 메인스레드 USD 캡처는 여기서).
+- **P3 (Layer 3)** ✅ — `statusline_from_payload`(실 cost·rate-limit + 안정 필드로 클라우드 캡처) + `nudge`/`format_nudge`(모드 넛지) + `bin/effi-{statusline,hook-session-start,hook-prompt,hooks}` + `install_hooks`(안전 병합) + 14 테스트 + clean-context 리뷰 반영 (commit 4f867dd). **transcript 파싱 폐기, statusLine cost 필드로 대체.**
+
+**→ 전 레이어 완료. 원래 목표(세션 시작 자동 확인 + 상시 표시 + 사용량 반영 + 모드 어드바이저) 달성.**
 
 ## 10. Resolved Decisions (2026-07-24 확정)
 

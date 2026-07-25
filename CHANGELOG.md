@@ -1,5 +1,30 @@
 # Changelog
 
+## 4.5.0 — 2026-07-25
+
+### Added — Model Transparency & Credit Advisor (3-layer)
+- **`effi preflight`** — checks codex/gemini/claude/grok connection live
+  (existence + optional `--probe` API call) and recommends a mode from
+  connection health, estimated USD headroom, and task importance.
+- **`effi providers`** — per-provider usage detail + `budget <id> <usd>` /
+  `record` / `reset`. Credit is a **local USD estimate**; subscription/free
+  providers never show a fake balance.
+- **`effi statusline`** + **`effi hooks [install]`** — always-on statusLine
+  (mode · active model · real session `$cost` · Claude 5h headroom) and a
+  SessionStart preflight banner + UserPromptSubmit mode nudge. Real Claude
+  spend is captured via the stable `cost.total_cost_usd` statusLine field.
+- `catalog/providers.example.json` — zero-config provider registry.
+- 48 new tests (preflight / ledger / advisor).
+
+### Changed
+- Gemini path: `gemini` CLI reached EOL 2026-06-18 → **Antigravity CLI `agy`**
+  (Google-account OAuth). The Gemini **API** (`GEMINI_API_KEY`) is unaffected
+  and kept for routing. `doctor` now hints `agy` when `gemini` is absent.
+
+### Notes
+- Transcript parsing is intentionally avoided (format is version-internal);
+  cloud cost is captured from the stable statusLine cost field instead.
+
 ## 4.4.5 — 2026-07-21
 
 ### Added
