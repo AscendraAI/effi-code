@@ -21,6 +21,7 @@ from effi_core import (
     get_mode,
     set_mode,
     load_state,
+    local_driver_check,
 )
 import tempfile
 from pathlib import Path
@@ -241,6 +242,42 @@ class RouteTests(unittest.TestCase):
         self.assertIn("last_verified_at", cat)
         self.assertIn("next_review_due", cat)
         self.assertEqual(cat.get("updated_at"), cat.get("last_verified_at"))
+
+
+class LocalDriverCheckTests(unittest.TestCase):
+    """Guardrail: which local models can drive the Claude Code agent loop."""
+
+    def test_strong_agent_model_is_viable(self):
+        # qwen3-coder:30b carries the agent_local role — viable even over budget
+        r = local_driver_check({"model": "qwen3-coder:30b"})
+        self.assertTrue(r["ok"])
+
+    def test_micro_model_is_not_viable(self):
+        # 1.5b = format/tiny_transform only, no agent_local role. Bare name only,
+        # mirroring the real CLI path (effi-pick emits just the model name).
+        r = local_driver_check({"model": "qwen2.5-coder:1.5b"})
+        self.assertFalse(r["ok"])
+        self.assertIn("JSON", r["reason"])
+
+    def test_fast_worker_model_is_not_viable(self):
+        # 7b is a mechanical worker (boilerplate/translate), not an agent driver
+        r = local_driver_check({"model": "qwen2.5-coder:7b"})
+        self.assertFalse(r["ok"])
+
+    def test_explicit_ram_fallback_message(self):
+        # fit:False (micro fallback from RAM pressure) → specific RAM message
+        r = local_driver_check({"model": "qwen2.5-coder:1.5b", "fit": False})
+        self.assertFalse(r["ok"])
+        self.assertIn("마이크로 폴백", r["reason"])
+
+    def test_unknown_custom_model_is_flagged_but_not_mislabeled(self):
+        # a custom pull not in the catalog: fail-closed (warn) but do NOT claim
+        # it's "small" — capability is genuinely unknown (regression for #2)
+        r = local_driver_check({"model": "mystery-coder:70b"})
+        self.assertFalse(r["ok"])
+        self.assertIn("미등록", r["reason"])
+        self.assertNotIn("소형", r["reason"])
+        self.assertNotIn("워커 전용", r["reason"])
 
 
 if __name__ == "__main__":

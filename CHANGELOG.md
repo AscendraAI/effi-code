@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.6.2 — 2026-07-25
+
+### Added — local-driver guardrail
+- `effi local` no longer silently launches a model too small to drive Claude
+  Code's agent loop. Such models (no `agent_local` catalog role — micro/fast/mid
+  tiers) can't follow the large system prompt + tool schema and **emit raw
+  tool-call JSON as plain text** (`{"name":"Write",…}`). The launcher now warns,
+  explains the symptom, and on a TTY prompts `[c=cloud / y=local / N=cancel]`
+  (`c` re-launches the cloud session). Non-interactive runs warn and proceed.
+- `effi local` stops swallowing `effi-pick`'s stderr, so the RAM-pressure /
+  micro-fallback warnings ("no model fits budget; using micro fallback",
+  "RAM tight") are actually visible.
+- Core: `local_driver_check(pick)` → `{ok, model, tier, reason}`, keyed on the
+  catalog's `agent_local` role. +4 tests (107 total).
+
 ## 4.6.1 — 2026-07-25
 
 ### Fixed — honest Gemini connect hint

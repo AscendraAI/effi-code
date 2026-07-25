@@ -59,7 +59,27 @@ case "$MODE" in
   local)
     ensure_ollama
     if [ -z "$LOCAL_MODEL" ]; then
-      LOCAL_MODEL="$("$BIN/effi-pick" 2>/dev/null || echo qwen2.5-coder:3b)"
+      # surface effi-pick's RAM/fallback warnings (stderr) — don't swallow them
+      LOCAL_MODEL="$("$BIN/effi-pick" || echo qwen2.5-coder:3b)"
+    fi
+    # Guardrail: a model too small to drive Claude Code's agent loop emits raw
+    # tool-call JSON as text (looks like {"name":"Write",…}). Warn — and confirm
+    # on a TTY — before launching one. Driver = catalog `agent_local` role.
+    GUARD="$(EFFI_M="$LOCAL_MODEL" python3 -c 'import os;from effi_core import local_driver_check as c;r=c({"model":os.environ["EFFI_M"]});print(("OK" if r["ok"] else "WARN")+"|"+r["reason"])' 2>/dev/null || echo "OK|")"
+    if [ "${GUARD%%|*}" = "WARN" ]; then
+      echo "⚠ $LOCAL_MODEL — ${GUARD#*|}" >&2
+      echo "  권장: 클라우드 → effi   |   더 큰 로컬 → 앱 닫고 EFFI_LOCAL_MODEL=qwen3-coder:30b effi local" >&2
+      if [ -t 0 ]; then
+        printf "  진행? [c=클라우드 전환 / y=그래도 로컬 / N=취소] " >&2
+        read -r ans || ans=""   # EOF (Ctrl-D) → empty → cancel branch, not set -e abort
+        case "$ans" in
+          c|C) exec "$0" cloud "$@" ;;
+          y|Y) : ;;
+          *) echo "취소됨." >&2; exit 1 ;;
+        esac
+      else
+        echo "  (비대화형 — 경고만 하고 진행)" >&2
+      fi
     fi
     if ! ollama list 2>/dev/null | grep -q "${LOCAL_MODEL%%:*}"; then
       echo "  · pulling $LOCAL_MODEL …"

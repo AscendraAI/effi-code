@@ -852,6 +852,48 @@ def pick_local(
     }
 
 
+def local_driver_check(pick: dict, cat: Optional[dict] = None) -> dict:
+    """Can this local pick DRIVE Claude Code interactively (agent loop + tool
+    calls), or is it only a one-shot mechanical worker?
+
+    Small models can't follow Claude Code's large system prompt + tool schema —
+    they emit raw tool-call JSON as plain text (the classic "why is it printing
+    {\"name\":...}" failure). The catalog marks genuine drivers with the
+    `agent_local` role (local_strong tier); everything else is worker-only.
+    Returns {ok, model, tier, reason}.
+    """
+    name = pick.get("model", "")
+    cat = cat or load_catalog()
+    meta = (cat.get("providers", {}).get("local", {}) or {}).get("models", {}).get(name) or {}
+    tier = pick.get("tier") or meta.get("tier")
+    roles = set(pick.get("roles") or meta.get("role") or [])
+    leak = " — Claude Code 대화형 툴콜을 못 하고 응답이 날 JSON으로 새어나옴"
+
+    # A genuine agent driver (agent_local role) is viable regardless of RAM: if
+    # the user pinned it ollama will still load it (slowly) and tool-calls work.
+    # Checked first so a pinned large agent model is never RAM-warned.
+    if "agent_local" in roles:
+        return {"ok": True, "model": name, "tier": tier,
+                "reason": "agent_local — Claude Code 대화형 구동 가능"}
+
+    # Not a driver — say why as specifically as the data allows. `fit` isn't
+    # passed on the real CLI path (only a bare model name is), so reconstruct
+    # the RAM-fallback situation from the catalog RAM vs the live budget.
+    if pick.get("fit") is False:
+        why = "RAM 예산 초과 → 마이크로 폴백"
+    elif not meta:
+        return {"ok": False, "model": name, "tier": tier,
+                "reason": "카탈로그 미등록 모델 — 에이전트 구동 가능 여부 불명"
+                          f"{leak}. 문제 시 큰 로컬(agent_local) 또는 클라우드(effi) 사용"}
+    else:
+        ram = meta.get("ram_gb")
+        if ram is not None and float(ram) > local_budget():
+            why = "RAM 예산 초과 → 마이크로 폴백"
+        else:
+            why = f"{tier or '워커'} 모델(agent_local 아님) — 기계적 워커 전용"
+    return {"ok": False, "model": name, "tier": tier, "reason": why + leak}
+
+
 # ── Domain classification ────────────────────────────────────────────
 
 DOMAIN_ORDER = [
