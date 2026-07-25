@@ -11,8 +11,19 @@ python3 - <<'PY'
 # For SessionStart, plain stdout on exit 0 is added to the session context —
 # simpler and unambiguous vs guessing the JSON shape (and avoids double-inject).
 try:
-    from effi_core import preflight, format_preflight
-    print(format_preflight(preflight(probe=False)))
+    from effi_core import preflight, format_preflight, project_mode_is_set
+    pf = preflight(probe=False)
+    print(format_preflight(pf))
+    # Hooks cannot pop an interactive menu, so when no mode is pinned for this
+    # project we ask the ASSISTANT to prompt the user (with the recommendation).
+    if not project_mode_is_set():
+        rec = pf.get("mode_recommendation") or {}
+        print(
+            f"\n[effi:action] 이 프로젝트에 모드가 고정돼 있지 않습니다. "
+            f"세션을 시작하기 전에 사용자에게 어떤 모드(🚀Apex / 🛣Cruise / ☕Sip)로 "
+            f"진행할지 물어보고, 답을 받으면 `effi mode set <mode>`로 고정하세요. "
+            f"추천: {rec.get('mode','cruise')} — {rec.get('reason','')}"
+        )
 except Exception as e:
     print(f"effi preflight unavailable: {e}")
 PY
