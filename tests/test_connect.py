@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -58,19 +59,50 @@ class ConnectHintTests(unittest.TestCase):
         self.assertEqual(h["cmd"], ["codex", "login"])
         self.assertEqual(h["api_key_env"], "OPENAI_API_KEY")
 
-    def test_gemini_hint_honest_about_agy(self):
-        # agy absent → lead with what actually works (API key + IDE app),
-        # and say plainly that the agy CLI does not exist.
-        with mock.patch.object(ec, "_which", _no_cli):
-            h = connect_hint("gemini", self.provs["gemini"])
-        self.assertEqual(h["cmd"], ["agy"])  # command mapping unchanged
-        self.assertIn("GEMINI_API_KEY", h["login"])
-        self.assertIn("Antigravity IDE", h["login"])
-        self.assertIn("agy CLI 미존재", h["login"])
-        # agy present → offer the login path
+    def test_gemini_hint_leads_with_api_key_not_retired_login(self):
+        # Google retired Gemini Code Assist for individuals: the CLI login still
+        # succeeds and still writes creds, then every call is refused with
+        # IneligibleTierError. So the hint must lead with the key whether or not
+        # the CLI is installed — never with install-then-login.
+        for which in (_no_cli, _all_cli):
+            with mock.patch.object(ec, "_which", which):
+                h = connect_hint("gemini", self.provs["gemini"])
+            self.assertIn("GEMINI_API_KEY", h["login"])
+            self.assertIn("aistudio.google.com", h["login"])
+            self.assertNotIn("Login with Google", h["login"])
+            self.assertNotIn("npm i -g @google/gemini-cli", h["login"])
+
+    def test_retired_login_guides_instead_of_execing(self):
+        # The whole point: `effi connect gemini` must not launch the dead flow.
         with mock.patch.object(ec, "_which", _all_cli):
-            h2 = connect_hint("gemini", self.provs["gemini"])
-        self.assertIn("effi connect gemini", h2["login"])
+            c = connect_command("gemini", self.provs["gemini"])
+        self.assertFalse(c["available"])          # nothing to exec
+        self.assertTrue(c["guide"])               # …a guide instead
+        self.assertIn("GEMINI_API_KEY", c["guide"])
+        self.assertEqual(c["oauth_retired"], "2026-06-18")
+        # never seed the retired auth picker
+        self.assertNotIn("GEMINI_DEFAULT_AUTH_TYPE", c["env"])
+
+    def test_retired_provider_never_reports_stale_creds_as_login(self):
+        # Credentials linger on disk after the client is retired; reporting them
+        # as a login is what made preflight show a false 🟢.
+        with tempfile.TemporaryDirectory() as td:
+            creds = Path(td) / "oauth_creds.json"
+            creds.write_text('{"access_token": "x", "refresh_token": "y"}')
+            spec = dict(self.provs["gemini"], oauth_creds=[str(creds)])
+            with mock.patch.object(ec, "_which", _all_cli):
+                c = connect_command("gemini", spec)
+            self.assertFalse(c["logged_in"])
+
+    def test_connect_command_falls_back_to_legacy_cli(self):
+        # Generic legacy fallback (asserted on a live provider — gemini is
+        # retired, so it can never be available regardless of what is on PATH).
+        spec = {"cli": "newcli", "cli_legacy": "oldcli"}
+        with mock.patch.object(ec, "_which",
+                               lambda c: "/usr/bin/oldcli" if c == "oldcli" else None):
+            c = connect_command("acme", spec)
+        self.assertEqual(c["binary"], "oldcli")
+        self.assertTrue(c["available"])
 
     def test_unknown_provider_generic_fallback(self):
         h = connect_hint("acme", {"cli": "acme", "api_key_env": "ACME_KEY"})
@@ -151,9 +183,11 @@ class FormatConnectTests(unittest.TestCase):
             rep = connect_report(probe=False)
         out = format_connect(rep)
         self.assertIn("연결하기", out)
-        # gemini down + agy absent → honest hint (API key), no false "바로 실행"
+        # gemini: retired login → key hint, and never a false "바로 실행"
         self.assertIn("GEMINI_API_KEY", out)
         self.assertNotIn("↳ 바로 실행: effi connect gemini", out)
+        # claude CLI absent → install/login hint still surfaces for live providers
+        self.assertIn("claude", out)
 
     def test_run_line_shown_only_when_login_cli_present(self):
         # codex with its CLI on PATH but no key → connected path uses oauth, so

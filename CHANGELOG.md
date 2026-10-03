@@ -1,5 +1,123 @@
 # Changelog
 
+## 4.8.0 — 2026-07-26
+
+### Fixed — Gemini, after two wrong premises in a row
+Both earlier stories about Gemini were wrong, in opposite directions:
+
+- v4.6.1: *"the `gemini` CLI died 2026-06-18, use Antigravity's `agy`"* — false.
+  `@google/gemini-cli` is actively shipping (stable **v0.52.0**), and no `agy`
+  binary exists; Antigravity is an IDE. That premise pointed the registry at a
+  login that does not exist.
+- This release's own draft: *"so `oauth-personal` / Login with Google works"* —
+  also false. Google **stopped serving Gemini Code Assist for individuals on
+  2026-06-18 — free, Google AI Pro and AI Ultra alike**. Paying does not buy a
+  way through. The login still succeeds, still writes a full
+  `~/.gemini/oauth_creds.json`, and then the first call is refused — measured,
+  not inferred:
+
+  ```
+  $ gemini -p "say OK"     # rc=55
+  IneligibleTierError: This client is no longer supported for Gemini Code Assist
+  for individuals … reasonCode: UNSUPPORTED_CLIENT, tierId: free-tier
+  ```
+
+  This is the worst failure shape available: authenticate, then get refused.
+  `UNSUPPORTED_CLIENT` is not even in the CLI's own `IneligibleTierReasonCode`
+  enum — the server issues it, so upgrading the CLI cannot help.
+
+**Code Assist Standard/Enterprise was not retired** and still works, so the
+retirement is scoped rather than blanket: `oauth_retired_unless_env:
+"GOOGLE_CLOUD_PROJECT"` means a licensed GCP project keeps its 🟢. Marking a
+live login dead would be the same bug as the false 🟢, only mirrored.
+
+So on a personal account Gemini has exactly one routable credential —
+`GEMINI_API_KEY`:
+- Registry: `cli: gemini` kept, `agy` and `oauth_auth_type` **removed**, new
+  `oauth_retired: "2026-07"` + `oauth_retired_note` + `api_key_url`.
+  `subscription: true` dropped — there is no subscription path through the CLI.
+- `effi connect gemini` **no longer execs anything**. It prints how to get a key
+  (aistudio.google.com/apikey), what to export, and that AI Pro/Ultra means the
+  Antigravity IDE — which has no pipe CLI and so is not a routing target.
+- `effi doctor` reports `개인용 OAuth 폐기 — export GEMINI_API_KEY=… 필요`
+  instead of checking for a credential file the server rejects.
+- Routing steps hand over `gemini -m <model> -p "…"` (`-o json`) and say the key
+  is required, replacing the old "subscription login means you need no key".
+
+### Added — `antigravity` provider (the surviving subscription path), measured
+Google's migration target for personal Gemini subscriptions is the Antigravity
+CLI, and unlike v4.6.1's `agy` guess, this one was installed and run before being
+written down. What it actually does (agy 1.1.7, darwin_arm64):
+
+- **Subscription auth works with no API key.** `agy models` answered instantly
+  off the OS keyring — it reuses the Antigravity IDE login. It also exposes
+  `claude-sonnet-4-6`, `claude-opus-4-6-thinking` and `gpt-oss-120b-medium`
+  alongside the Gemini models.
+- **`-p/--print` is a real, documented flag** ("Run a single prompt
+  non-interactively and print the response"), with `--model`, `--effort`, and
+  `--mode`. The answer does land on stdout.
+- **It exits only when stdout is a file.** `agy -p "…" > out.txt` returns rc=0
+  in ~39s (twice). Hand it a **pipe** — `$(agy …)`, `agy … | jq`, or anything
+  capturing stdout — and the answer still arrives but the process waits forever.
+  `--print-timeout` does not rescue the pipe case, and at `20s` it suppresses
+  the output entirely.
+- **And it is slow to start.** First output at **38.1s** for a trivial prompt
+  (twice, identical), 53.5s for a 200-word answer. ~38s is fixed overhead.
+
+Registered as a provider so preflight shows the subscription is live, with the
+latency in the table itself (`design/research(구독·기동~40s)`). **Routing defaults
+are unchanged** — effi only ever prints provider commands, never execs them, so
+nothing silently hands you a process that will not terminate.
+
+### Fixed — provider-id column ate its own gap
+`format_preflight` / `format_providers` padded the id with a hard-coded `:<9`,
+so `antigravity` (11 chars) rendered as `antigravitycli:agy`. Both now size the
+column from the data (`_id_col_width`, floor of 9 so short lists look the same).
+`best_for` also takes a provider-specific label before falling back to the model
+family it bills as.
+
+### Changed — two steps of connection honesty
+1. **A login is a credential file, not a binary on PATH.** New
+   `oauth_creds_path()`: a provider that declares `oauth_creds` (str or list of
+   candidates) is only 🟢 when a **non-empty credential file actually exists** —
+   `~/.gemini/oauth_creds.json`, `~/.codex/auth.json`, `~/.grok/auth.json`.
+   Installed-but-never-logged-in is now 🟡 `미로그인`, which the old
+   CLI-presence heuristic reported as connected. Providers that keep credentials
+   off the filesystem (Claude Code → macOS Keychain) omit the field and keep the
+   old heuristic, so nothing regresses.
+2. **A credential file is not proof the backend still honours it.** Gemini is
+   the worked example: a complete, freshly-written creds file bought a false 🟢
+   in preflight while every call was refused. A provider that declares
+   `oauth_retired` now has its creds ignored for connection purposes and reads
+   🟡 `oauth 폐기 → 키 필요` — never `미로그인`, because the user *did* log in.
+   The status column truncates, so that phrase is placed ahead of `cli:…`: the
+   one thing to act on has to survive the cut.
+- Both are registry-driven: a future retirement needs `oauth_retired` (+ optional
+  `oauth_retired_note`, `api_key_url`) and no code change.
+- `probe_provider` returns `has_oauth` / `oauth_creds`; `connect_command`
+  returns `env`, `install`, `logged_in`, `oauth_retired`, `guide`, and falls back
+  to `cli_legacy` when the primary login binary is missing.
+- `bin/effi-connect` gains a `GUIDE` state for providers whose login is retired.
+- The gemini-only "key present but no CLI ⇒ 🟡 api-only" special case is gone.
+  One rule for everyone: **an API key alone is a routable credential (🟢)**, and
+  `api-only` survives as a label, not a downgrade.
+- `effi connect <p>` guides install-then-login (`npm i -g @google/gemini-cli`)
+  when the login CLI is absent and the registry knows how to get it.
+- +7 tests (162 total) covering the login-file semantics, the empty-file case,
+  the legacy-CLI fallback, and the retirement path: stale creds never reaching
+  🟢, the `미로그인` label being suppressed, a key restoring the connection, and
+  `effi connect gemini` guiding rather than exec'ing.
+
+### Fixed — table alignment
+- `format_preflight` / `format_providers` padded status columns with `len()`,
+  which drifts one cell per CJK char. Fine while every status was ASCII; the new
+  `미로그인` label sheared the table. Both now pad by `_dwidth` (the helper the
+  splash panel already used) via `_dpad`.
+
+### Note
+- `bin/effi-connect` keeps its heredoc apostrophe-free: bash 3.2 (macOS default)
+  mis-parses `'` inside a heredoc nested in `$(...)` and fails the whole script.
+
 ## 4.7.1 — 2026-07-26
 
 ### Fixed — the launch screen was invisible

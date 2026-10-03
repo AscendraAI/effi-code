@@ -62,9 +62,10 @@ class ProbeTests(unittest.TestCase):
             r = probe_provider("claude", spec)
         self.assertEqual(r["connection"], "connected")
 
-    def test_gemini_api_only_is_partial(self):
-        # agy + legacy gemini both absent, but GEMINI_API_KEY present → partial (api-only)
-        spec = {"api_key_env": "GEMINI_API_KEY", "cli": "agy", "cli_legacy": "gemini",
+    def test_gemini_api_key_alone_is_routable(self):
+        # gemini CLI absent but GEMINI_API_KEY present → routable via the metered
+        # API (same rule as every other provider), flagged as the api-only path.
+        spec = {"api_key_env": "GEMINI_API_KEY", "cli": "gemini", "cli_legacy": "agy",
                 "cli_auth": "google_oauth"}
         os.environ["GEMINI_API_KEY"] = "k"
         try:
@@ -72,8 +73,101 @@ class ProbeTests(unittest.TestCase):
                 r = probe_provider("gemini", spec)
         finally:
             os.environ.pop("GEMINI_API_KEY", None)
-        self.assertEqual(r["connection"], "partial")
+        self.assertEqual(r["connection"], "connected")
         self.assertIn("api-only", r["detail"])
+
+    def test_oauth_login_file_connects_without_key(self):
+        # Generic subscription-login mechanism: the credential file — not the
+        # mere presence of the binary — is what counts as logged in. (Asserted
+        # on a synthetic provider: gemini's own OAuth client is retired, see
+        # test_retired_oauth_never_counts_as_connected.)
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            creds = Path(td) / "oauth_creds.json"
+            spec = {"api_key_env": "GEMINI_API_KEY", "cli": "gemini",
+                    "cli_auth": "google_oauth", "oauth_creds": str(creds)}
+            os.environ.pop("GEMINI_API_KEY", None)
+            which_gemini = lambda c: "/usr/bin/gemini" if c == "gemini" else None
+            # installed but not logged in yet → partial
+            with mock.patch.object(ec, "_which", which_gemini):
+                r = probe_provider("gemini", spec)
+            self.assertEqual(r["connection"], "partial")
+            self.assertIn("미로그인", r["detail"])
+            # after login → connected, no API key involved
+            creds.write_text('{"access_token": "x"}', encoding="utf-8")
+            with mock.patch.object(ec, "_which", which_gemini):
+                r2 = probe_provider("gemini", spec)
+            self.assertEqual(r2["connection"], "connected")
+            self.assertTrue(r2["has_oauth"])
+            self.assertFalse(r2["has_key"])
+            self.assertIn("oauth", r2["detail"])
+
+    def test_retired_oauth_never_counts_as_connected(self):
+        # Google retired Gemini Code Assist for individuals: the login still
+        # succeeds and still writes a full credential file, then every call is
+        # refused (IneligibleTierError / UNSUPPORTED_CLIENT). A valid-looking
+        # file on disk must therefore not buy a 🟢 — only the key does.
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            creds = Path(td) / "oauth_creds.json"
+            creds.write_text('{"access_token": "x", "refresh_token": "y"}',
+                             encoding="utf-8")
+            spec = {"api_key_env": "GEMINI_API_KEY", "cli": "gemini",
+                    "cli_auth": "google_oauth", "oauth_creds": [str(creds)],
+                    "oauth_retired": "2026-07"}
+            which_gemini = lambda c: "/usr/bin/gemini" if c == "gemini" else None
+            os.environ.pop("GEMINI_API_KEY", None)
+            with mock.patch.object(ec, "_which", which_gemini):
+                r = probe_provider("gemini", spec)
+            self.assertEqual(r["connection"], "partial")
+            self.assertFalse(r["has_oauth"])
+            self.assertIn("폐기", r["detail"])
+            self.assertIn("키 필요", r["detail"])
+            self.assertNotIn("미로그인", r["detail"])  # they did log in
+            # a key restores a real connection
+            os.environ["GEMINI_API_KEY"] = "sk-test"
+            try:
+                with mock.patch.object(ec, "_which", which_gemini):
+                    r2 = probe_provider("gemini", spec)
+            finally:
+                os.environ.pop("GEMINI_API_KEY", None)
+            self.assertEqual(r2["connection"], "connected")
+
+    def test_retirement_skipped_for_still_live_tier(self):
+        # Code Assist Standard/Enterprise was NOT retired — it runs against a
+        # licensed GCP project. Declaring those logins dead would be the same
+        # bug as the false 🟢, just mirrored.
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            creds = Path(td) / "oauth_creds.json"
+            creds.write_text('{"access_token": "x"}', encoding="utf-8")
+            spec = {"api_key_env": "GEMINI_API_KEY", "cli": "gemini",
+                    "cli_auth": "google_oauth", "oauth_creds": [str(creds)],
+                    "oauth_retired": "2026-06-18",
+                    "oauth_retired_unless_env": "GOOGLE_CLOUD_PROJECT"}
+            which_gemini = lambda c: "/usr/bin/gemini" if c == "gemini" else None
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ["GOOGLE_CLOUD_PROJECT"] = "my-licensed-project"
+            try:
+                with mock.patch.object(ec, "_which", which_gemini):
+                    r = probe_provider("gemini", spec)
+            finally:
+                os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+            self.assertEqual(r["connection"], "connected")
+            self.assertTrue(r["has_oauth"])
+            self.assertNotIn("폐기", r["detail"])
+
+    def test_empty_oauth_creds_file_is_not_a_login(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            creds = Path(td) / "oauth_creds.json"
+            creds.write_text("", encoding="utf-8")
+            spec = {"cli": "gemini", "cli_auth": "google_oauth",
+                    "oauth_creds": [str(creds)]}
+            with mock.patch.object(ec, "_which",
+                                   lambda c: "/usr/bin/gemini" if c == "gemini" else None):
+                r = probe_provider("gemini", spec)
+            self.assertEqual(r["connection"], "partial")
 
     def test_probe_api_fail_downgrades_to_partial(self):
         spec = {"api_key_env": "XAI_API_KEY", "cli": "grok", "probe_api": "https://api.x.ai/v1/models"}
@@ -240,9 +334,16 @@ class PreflightIntegrationTests(unittest.TestCase):
         self.assertIn("providers", data)
         self.assertIn("claude", data["providers"])
         self.assertIn("gemini", data["providers"])
-        # gemini must point at agy with legacy fallback recorded
-        self.assertEqual(data["providers"]["gemini"]["cli"], "agy")
-        self.assertEqual(data["providers"]["gemini"]["cli_legacy"], "gemini")
+        # gemini CLI is alive, but its individual Google login is retired —
+        # the registry must carry the retirement, not an auth-type to seed.
+        g = data["providers"]["gemini"]
+        self.assertEqual(g["cli"], "gemini")
+        self.assertEqual(g["cli_auth"], "google_oauth")
+        self.assertEqual(g["oauth_retired"], "2026-06-18")
+        self.assertNotIn("oauth_auth_type", g)
+        self.assertEqual(g["api_key_env"], "GEMINI_API_KEY")
+        self.assertIn("aistudio.google.com", g["api_key_url"])
+        self.assertIn("~/.gemini/oauth_creds.json", g["oauth_creds"])
 
     def test_preflight_structure_and_render(self):
         pf = preflight(probe=False)
@@ -252,6 +353,18 @@ class PreflightIntegrationTests(unittest.TestCase):
         out = format_preflight(pf)
         self.assertIn("effi preflight", out)
         self.assertIn("추천 모드", out)
+
+    def test_table_columns_align_with_korean_labels(self):
+        # Status details carry Korean ('미로그인'), so padding must go by display
+        # width — len() drifts one cell per wide char and shears the table.
+        from effi_core import _dwidth
+        pf = preflight(probe=False)
+        pf["providers"][0]["detail"] = "cli:gemini, 미로그인"
+        pf["providers"][1]["detail"] = "oauth, cli:codex"
+        rows = [l for l in format_preflight(pf).splitlines()
+                if l.startswith("  ") and "Best for" not in l and "─" not in l][:2]
+        starts = [_dwidth(r[:r.rindex("  ") + 2]) for r in rows]
+        self.assertEqual(len(set(starts)), 1, f"last column misaligned: {rows}")
 
     def test_mode_suggestion_high_stakes_apex(self):
         from effi_core import format_mode_suggestion

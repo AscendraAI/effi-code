@@ -90,6 +90,45 @@ export PATH="$PWD/bin:$PATH"        # or symlink bin/* into /opt/homebrew/bin
 claude                              # complete browser/device login, then quit
 ```
 
+### Gemini — an API key, not a login
+
+Google stopped serving **Gemini Code Assist for individuals on 2026-06-18 —
+free, AI Pro and AI Ultra alike**, so the `gemini` CLI's *Login with Google* is a
+trap: it authenticates, writes `~/.gemini/oauth_creds.json`, and then every call
+fails with `IneligibleTierError (UNSUPPORTED_CLIENT)`. Paying does not get you
+past it. `effi connect gemini` therefore refuses to launch it and tells you this
+instead.
+
+```sh
+export GEMINI_API_KEY=…       # get one at https://aistudio.google.com/apikey
+effi connect                  # 🟢 gemini  key, cli:gemini
+```
+
+Without a key, effi shows 🟡 `oauth 폐기 → 키 필요` — never `미로그인`, since a
+login is not what is missing. **Code Assist Standard/Enterprise is unaffected**:
+set `GOOGLE_CLOUD_PROJECT` and effi skips the retirement check entirely, keeping
+that login 🟢. For a headless slice (key required):
+
+```sh
+gemini -m gemini-3.5-flash -p "…"        # -o json also works
+```
+
+Personal subscribers (AI Pro/Ultra) migrate to the Antigravity CLI (`agy`), which
+reuses the Antigravity IDE login from the OS keychain — no API key. Two measured
+caveats before you wire it into anything (agy 1.1.7):
+
+```sh
+agy --model gemini-3.1-pro-low -p "…" > out.txt    # redirect to a FILE
+```
+
+**Redirect, never pipe.** To a file it exits cleanly (rc=0) in ~39s; through a
+pipe — `agy … | jq`, or `$(agy …)` — the answer still arrives but the process
+then waits forever and has to be killed. `--print-timeout` does not break the
+hang. **And it is slow**: ~38s of fixed startup before the first output even on a
+trivial prompt (53.5s for a 200-word task), so it suits batch work, not an
+interactive loop. This is why effi registers `agy` but leaves routing defaults
+alone.
+
 ### Wire any app repo
 
 ```sh
@@ -123,7 +162,7 @@ model, what's connected, and what can I type next*:
       ███████╗██║     ██║     ██║       ╚██████╗╚██████╔╝██████╔╝███████╗
       ╚══════╝╚═╝     ╚═╝     ╚═╝        ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 
-╭─ effi-code v4.7.0 · catalog 2026.07.21 · 🛣 Cruise ──────────────────╮
+╭─ effi-code v4.8.0 · catalog 2026.07.21 · 🛣 Cruise ──────────────────╮
 │ 🛣 Cruise · claude-sonnet-5                                          │
 │ CLOUD · Claude Code                                                  │
 │ ~/your-app                                                           │
@@ -131,15 +170,14 @@ model, what's connected, and what can I type next*:
 │                                                                      │
 │ Providers                                                            │
 │ 🟢 claude  cli:claude · 구독                                          │
-│ 🔴 gemini  no credential · 예산미설정                                  │
+│ 🟢 gemini  key, cli:gemini · 종량제                                    │
 │                                                                      │
 │ Commands                                                             │
 │   세션: cloud, local, status, doctor, init, splash                    │
 │   라우팅: mode, route, use, pick, classify                            │
 │                                                                      │
 │   🚀 Apex · 🛣 Cruise · ☕ Sip   (현재 Cruise)                         │
-│   23 commands · 4/5 providers connected · effi help                  │
-│   ⚠ 미연결: gemini — effi connect gemini                              │
+│   23 commands · 5/5 providers connected · effi help                  │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -281,7 +319,7 @@ See [`docs/accounts.md`](docs/accounts.md).
 | `effi route "…"` | Task → model (mode-aware; may prompt on importance) |
 | `effi use "…"` | Route + how to run (`--exec` for Claude) |
 | `effi init` | Wire project: `tasks/`, `CLAUDE.md`, `.effi/` |
-| `effi connect` | Onboarding: effi-code intro + provider connect status; `effi connect <p>` runs that provider's own login (`codex login`, `agy`, …) |
+| `effi connect` | Onboarding: effi-code intro + provider connect status; `effi connect <p>` runs that provider's own login (`codex login`, `claude`, …), or explains the key path when a provider retired its login (`gemini`) |
 | `effi doctor` | Health check |
 | `effi new <name> [goal]` | Scaffold task folder under **project root** |
 | `effi log <name> <TAG> <msg>` | Append to `tasks/<name>/log.md` |

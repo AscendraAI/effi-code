@@ -7,7 +7,7 @@
 #   effi connect --json          machine-readable (for the assistant / re-check)
 #   effi connect <provider>      run that provider's first-party login (TTY)
 #
-# ToS: guides/runs each provider's OWN login only (codex login, agy, claude, …)
+# ToS: guides/runs each provider's OWN login only (codex login, gemini, claude, …)
 # or an API-key env var — never proxies subscription OAuth through a router.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -44,10 +44,20 @@ provs = (load_providers().get("providers") or {})
 if pid not in provs:
     print("UNKNOWN"); raise SystemExit(0)
 c = connect_command(pid, provs[pid])
-if c["available"]:
-    print("EXEC " + " ".join(shlex.quote(x) for x in c["cmd"]))
+if c.get("guide"):
+    # Provider retired the login we used to run — guide, never exec.
+    print("GUIDE " + c["guide"])
+elif c["available"]:
+    # `env` prefix preselects the subscription-login option in that CLI own
+    # auth picker. Must be a real binary, not a shell assignment: the caller
+    # execs this string directly.
+    # (No apostrophes in this heredoc — bash 3.2 mis-parses them inside "$(...)".)
+    pre = " ".join(f"{k}={shlex.quote(v)}" for k, v in (c.get("env") or {}).items())
+    cmd = " ".join(shlex.quote(x) for x in c["cmd"])
+    print("EXEC " + (f"env {pre} {cmd}" if pre else cmd))
 else:
-    print("INSTALL " + (c.get("binary") or "") + "\t" + (c.get("login") or ""))
+    print("INSTALL " + (c.get("binary") or "") + "\t" + (c.get("login") or "")
+          + "\t" + (c.get("install") or ""))
 PY
 )"
   STATUS="${OUT%% *}"
@@ -56,14 +66,21 @@ PY
       echo "unknown provider: $TARGET" >&2
       echo "  목록 보기: effi connect" >&2
       exit 3 ;;
+    GUIDE)
+      printf '%s\n' "${OUT#GUIDE }" >&2
+      exit 1 ;;
     INSTALL)
       REST="${OUT#INSTALL }"
-      BINARY="${REST%%$'\t'*}"
-      LOGIN="${REST#*$'\t'}"
-      # Honest: don't promise "install then re-run" (the login CLI may not exist
-      # as a simple install, e.g. gemini/agy). Point at the actual connect path.
+      BINARY="$(printf '%s' "$REST" | cut -f1)"
+      LOGIN="$(printf '%s' "$REST" | cut -f2)"
+      INSTALL_CMD="$(printf '%s' "$REST" | cut -f3)"
       echo "· $TARGET 로그인 CLI '${BINARY:-?}' 미설치 — 연결법:" >&2
-      echo "  $LOGIN" >&2
+      if [ -n "$INSTALL_CMD" ]; then
+        echo "  1) 설치: $INSTALL_CMD" >&2
+        echo "  2) 로그인: effi connect $TARGET" >&2
+      else
+        echo "  $LOGIN" >&2
+      fi
       exit 1 ;;
     EXEC)
       CMD="${OUT#EXEC }"

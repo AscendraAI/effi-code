@@ -20,22 +20,42 @@
       "cli": "codex",
       "api_key_env": "OPENAI_API_KEY",
       "cli_auth": "subscription_oauth",
+      "oauth_creds": "~/.codex/auth.json",
       "probe_api": "https://api.openai.com/v1/models",
       "credit_source": "ledger",
       "budget_usd": 0,
+      "subscription": true,
       "note": "CLI 로그인(codex login, ChatGPT 구독) 또는 OPENAI_API_KEY 둘 중 하나로 연결"
     },
     "gemini": {
       "label": "Gemini",
       "models_provider": "gemini",
-      "cli": "agy",
-      "cli_legacy": "gemini",
+      "cli": "gemini",
       "api_key_env": "GEMINI_API_KEY",
+      "api_key_url": "https://aistudio.google.com/apikey",
       "cli_auth": "google_oauth",
+      "oauth_creds": ["~/.gemini/oauth_creds.json"],
+      "oauth_retired": "2026-06-18",
+      "oauth_retired_unless_env": "GOOGLE_CLOUD_PROJECT",
+      "oauth_retired_note": "Google가 2026-06-18자로 Gemini Code Assist for individuals — 무료 티어와 유료 Google AI Pro·Ultra 전부 — 에 대한 요청 처리를 중단했습니다. Login with Google은 성공해 ~/.gemini/oauth_creds.json을 쓰지만 호출에서 IneligibleTierError(UNSUPPORTED_CLIENT)로 거부됩니다. Code Assist Standard/Enterprise(라이선스된 GCP 프로젝트)는 영향 없음 — GOOGLE_CLOUD_PROJECT가 설정돼 있으면 이 폐기 판정을 적용하지 않습니다. 개인 구독 사용자는 Antigravity(agy) 또는 GEMINI_API_KEY로 이전.",
+      "install": "npm i -g @google/gemini-cli",
+      "headless": ["gemini", "-p"],
       "probe_api": "https://generativelanguage.googleapis.com/v1beta/models",
       "credit_source": "ledger",
       "budget_usd": 0,
-      "note": "gemini CLI 2026-06-18 사멸 → agy(Antigravity). API(GEMINI_API_KEY)는 라우팅용 별개 유지"
+      "note": "gemini CLI는 살아있지만(v0.52.x) 개인용 OAuth 경로는 폐기 — 라우팅 가능한 자격증명은 GEMINI_API_KEY(aistudio.google.com/apikey) 하나"
+    },
+    "antigravity": {
+      "label": "Antigravity (agy)",
+      "models_provider": "gemini",
+      "cli": "agy",
+      "cli_auth": "subscription_oauth",
+      "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+      "headless": ["agy", "-p"],
+      "credit_source": "ledger",
+      "budget_usd": 0,
+      "subscription": true,
+      "note": "Gemini Code Assist에서 잘린 개인 구독(AI Pro/Ultra)이 살아있는 경로. 자격증명은 OS 키체인(IDE 로그인 공유)이라 파일 검사 대상이 아님. 실측 주의 두 가지. (1) 반드시 파일 리다이렉트로 호출할 것 — 'agy -p ... > out.txt'는 rc=0으로 ~39초에 정상 종료하지만, 파이프($(...) 또는 | jq)로 받으면 답은 나온 뒤 프로세스가 영구 대기한다. (2) 사소한 프롬프트에도 첫 출력까지 ~38초 고정 오버헤드(200단어 53.5초). effi는 명령을 실행하지 않고 힌트만 주므로 라우팅 기본값은 바꾸지 않는다."
     },
     "grok": {
       "label": "Grok (xAI)",
@@ -43,6 +63,7 @@
       "cli": "grok",
       "api_key_env": "XAI_API_KEY",
       "cli_auth": "subscription_oauth",
+      "oauth_creds": "~/.grok/auth.json",
       "probe_api": "https://api.x.ai/v1/models",
       "credit_source": "ledger",
       "budget_usd": 0

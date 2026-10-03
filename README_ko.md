@@ -90,6 +90,43 @@ export PATH="$PWD/bin:$PATH"        # 또는 bin/* 를 /opt/homebrew/bin 에 링
 claude                              # 브라우저/기기 로그인 후 종료
 ```
 
+### Gemini — 로그인이 아니라 API 키
+
+Google이 **2026-06-18자로 Gemini Code Assist for individuals — 무료·AI Pro·Ultra
+전부** — 요청 처리를 중단해서, `gemini` CLI의 *Login with Google* 은 함정이 됐습니다.
+인증은 성공하고 `~/.gemini/oauth_creds.json` 까지 정상 기록되는데, 이후 모든 호출이
+`IneligibleTierError (UNSUPPORTED_CLIENT)` 로 거부됩니다. **유료라고 뚫리지 않습니다.**
+그래서 `effi connect gemini` 는 그 로그인을 **띄우지 않고** 이 사실을 알려줍니다.
+
+```sh
+export GEMINI_API_KEY=…       # 발급: https://aistudio.google.com/apikey
+effi connect                  # 🟢 gemini  key, cli:gemini
+```
+
+키가 없으면 🟡 `oauth 폐기 → 키 필요` 로 표시합니다 — `미로그인` 이 아닙니다.
+없는 건 로그인이 아니니까요. **Code Assist Standard/Enterprise는 영향 없습니다**:
+`GOOGLE_CLOUD_PROJECT` 를 설정하면 effi가 폐기 판정을 건너뛰고 🟢 로 둡니다.
+헤드리스 슬라이스(키 필요):
+
+```sh
+gemini -m gemini-3.5-flash -p "…"        # -o json 도 가능
+```
+
+개인 구독자(AI Pro/Ultra)는 **Antigravity CLI(`agy`)** 로 이전합니다. Antigravity
+IDE 로그인을 OS 키체인에서 재사용하므로 API 키가 필요 없습니다. 다만 어디에 엮기
+전에 알아야 할 실측 주의가 둘 있습니다(agy 1.1.7):
+
+```sh
+agy --model gemini-3.1-pro-low -p "…" > out.txt    # 반드시 파일로 리다이렉트
+```
+
+**리다이렉트로 받고, 파이프로 받지 마세요.** 파일로 받으면 ~39초에 rc=0으로 깨끗이
+끝나지만, 파이프(`agy … | jq`, `$(agy …)`)로 받으면 답은 나온 뒤 프로세스가 영원히
+대기해서 kill 해야 합니다. `--print-timeout` 으로도 못 끊습니다. **그리고 느립니다**:
+사소한 프롬프트에도 첫 출력까지 ~38초 고정 오버헤드(200단어 작업 53.5초)라, 대화형
+루프가 아니라 배치용입니다. effi가 `agy` 를 등록만 하고 라우팅 기본값은 그대로 둔
+이유가 이것입니다.
+
 ### 아무 앱 저장소에 연결
 
 ```sh
@@ -123,7 +160,7 @@ effi log auth-rate COMPLETE "배포 완료"
       ███████╗██║     ██║     ██║       ╚██████╗╚██████╔╝██████╔╝███████╗
       ╚══════╝╚═╝     ╚═╝     ╚═╝        ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 
-╭─ effi-code v4.7.0 · catalog 2026.07.21 · 🛣 Cruise ──────────────────╮
+╭─ effi-code v4.8.0 · catalog 2026.07.21 · 🛣 Cruise ──────────────────╮
 │ 🛣 Cruise · claude-sonnet-5                                          │
 │ CLOUD · Claude Code                                                  │
 │ ~/your-app                                                           │
@@ -131,15 +168,14 @@ effi log auth-rate COMPLETE "배포 완료"
 │                                                                      │
 │ Providers                                                            │
 │ 🟢 claude  cli:claude · 구독                                          │
-│ 🔴 gemini  no credential · 예산미설정                                  │
+│ 🟢 gemini  key, cli:gemini · 종량제                                    │
 │                                                                      │
 │ Commands                                                             │
 │   세션: cloud, local, status, doctor, init, splash                    │
 │   라우팅: mode, route, use, pick, classify                            │
 │                                                                      │
 │   🚀 Apex · 🛣 Cruise · ☕ Sip   (현재 Cruise)                         │
-│   23 commands · 4/5 providers connected · effi help                  │
-│   ⚠ 미연결: gemini — effi connect gemini                              │
+│   23 commands · 5/5 providers connected · effi help                  │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -281,7 +317,7 @@ effi                             # 임계 미만 계정 선택
 | `effi route "…"` | 업무 → 모델 (모드 반영; 중요도 불일치 시 질문) |
 | `effi use "…"` | 라우팅 + 실행 방법 (`--exec` 시 Claude) |
 | `effi init` | 프로젝트 연결: `tasks/`, `CLAUDE.md`, `.effi/` |
-| `effi connect` | 온보딩: effi-code 소개 + 프로바이더 연결 상태; `effi connect <p>`는 해당 프로바이더 자체 로그인 실행 (`codex login`, `agy`, …) |
+| `effi connect` | 온보딩: effi-code 소개 + 프로바이더 연결 상태; `effi connect <p>`는 해당 프로바이더 자체 로그인 실행 (`codex login`, `claude`, …). 로그인이 폐기된 프로바이더(`gemini`)는 키 발급법을 안내 |
 | `effi doctor` | 상태 점검 |
 | `effi new <이름> [목표]` | **프로젝트 루트** 아래 작업 폴더 생성 |
 | `effi log <이름> <TAG> <메시지>` | `tasks/<이름>/log.md`에 append |

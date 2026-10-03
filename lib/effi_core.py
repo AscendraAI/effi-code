@@ -1514,16 +1514,16 @@ def doctor() -> dict:
 
     for cmd in ("codex", "gemini", "grok"):
         p = which(cmd)
-        if cmd == "gemini" and not p:
-            # gemini CLI EOL 2026-06-18 → Antigravity CLI (agy)
-            agy = which("agy")
-            detail = (
-                f"gemini EOL → agy at {agy}" if agy
-                else "gemini EOL 2026-06-18 → install agy (antigravity.google) or use GEMINI_API_KEY"
-            )
-            checks.append({"name": "cli:gemini", "ok": True, "detail": detail})
-            continue
-        checks.append({"name": f"cli:{cmd}", "ok": True, "detail": p or "optional — not found"})
+        detail = p or "optional — not found"
+        if cmd == "gemini":
+            # The CLI is alive; its individual Google login is not. Checking for
+            # ~/.gemini/oauth_creds.json would pass on a credential the server
+            # refuses — the key is the only state worth reporting.
+            if not p:
+                detail = "optional — install: npm i -g @google/gemini-cli"
+            elif not os.environ.get("GEMINI_API_KEY"):
+                detail = f"{p} (개인용 OAuth 폐기 — export GEMINI_API_KEY=… 필요)"
+        checks.append({"name": f"cli:{cmd}", "ok": True, "detail": detail})
 
     # Ollama (optional unless you rely on local / effi local)
     cfg = load_config()
@@ -1627,6 +1627,7 @@ _PROVIDER_BEST_FOR = {
     "claude": "plan/impl/review",
     "openai": "bulk/refactor",
     "gemini": "design/research",
+    "antigravity": "design/research(구독·기동~40s)",
     "grok": "research/realtime",
     "local": "bulk/mechanical",
 }
@@ -1638,6 +1639,49 @@ def _which(cmd: Optional[str]) -> Optional[str]:
         return None
     from shutil import which as w
     return w(cmd)
+
+
+def oauth_creds_path(spec: dict) -> Optional[str]:
+    """Path of an existing, non-empty subscription/OAuth credential file, if the
+    provider declares one (`oauth_creds`: str or list of candidate paths).
+
+    This is the honest signal for "the user is logged in with their subscription
+    account" — the CLI binary merely being on PATH proves nothing. Providers that
+    keep credentials outside the filesystem (Claude Code → macOS Keychain) simply
+    omit the field and keep the CLI-presence heuristic.
+    """
+    raw = spec.get("oauth_creds")
+    if not raw:
+        return None
+    for cand in ([raw] if isinstance(raw, str) else list(raw)):
+        p = Path(os.path.expanduser(str(cand)))
+        try:
+            if p.is_file() and p.stat().st_size > 0:
+                return str(p)
+        except OSError:
+            continue
+    return None
+
+
+def oauth_retirement(spec: dict) -> Optional[str]:
+    """The retirement marker for this provider's OAuth client, or None if it
+    still has a live path.
+
+    A retirement is rarely total. Google stopped serving *Gemini Code Assist for
+    individuals* — free, Google AI Pro **and** AI Ultra — on 2026-06-18, while
+    leaving Code Assist **Standard/Enterprise** untouched; those run against a
+    licensed GCP project. `oauth_retired_unless_env` names the env var that
+    signals the still-live path (`GOOGLE_CLOUD_PROJECT`): when it is set we fall
+    back to normal credential judgement instead of declaring the login dead.
+    Being wrong in that direction would be the same bug in mirror image.
+    """
+    retired = spec.get("oauth_retired")
+    if not retired:
+        return None
+    escape = spec.get("oauth_retired_unless_env")
+    if escape and os.environ.get(escape):
+        return None
+    return retired
 
 
 def load_providers() -> dict:
@@ -1737,8 +1781,11 @@ def _probe_api_call(url: str, key_env: str, pid: str, timeout: float = 4.0) -> b
 def probe_provider(pid: str, spec: dict, do_call: bool = False) -> dict:
     """Connection status: existence check + optional live API call.
 
-    🟢 connected: credential present (key, or oauth-cli) and reachable/unchecked
-    🟡 partial:   credential present but CLI missing / api-only / call failed
+    🟢 connected: credential present (key, or subscription OAuth login) and
+                  reachable/unchecked
+    🟡 partial:   credential present but CLI missing / api-only / not logged in
+                  yet / call failed / the provider retired the OAuth client the
+                  credential belongs to (`oauth_retired`)
     🔴 down:      no credential and no CLI
     """
     key_env = spec.get("api_key_env")
@@ -1747,16 +1794,35 @@ def probe_provider(pid: str, spec: dict, do_call: bool = False) -> dict:
     cli_path = _which(cli)
     legacy_path = _which(cli_legacy)
     oauth = spec.get("cli_auth") in ("subscription_oauth", "google_oauth")
+    creds_file = oauth_creds_path(spec) if oauth else None
+    # A credential file proves a login *happened* — not that the backend still
+    # honours it. When a provider retires its OAuth client (`oauth_retired`),
+    # the login keeps succeeding and keeps writing creds, while every actual
+    # call is refused; the stale file would otherwise read as a green
+    # connection. Gemini is the worked example: Login with Google still fills
+    # ~/.gemini/oauth_creds.json, then the API answers IneligibleTierError
+    # (UNSUPPORTED_CLIENT, "Gemini Code Assist for individuals").
+    retired = oauth_retirement(spec)
+    if retired:
+        has_oauth = False
+    elif spec.get("oauth_creds"):
+        # declares a creds path ⇒ must actually show a login on disk
+        has_oauth = bool(creds_file)
+    else:
+        # keeps credentials off-filesystem ⇒ "CLI on PATH ⇒ assume logged in"
+        has_oauth = bool(oauth and (cli_path or legacy_path))
 
     parts = []
     if has_key:
         parts.append("key")
+    if has_oauth and spec.get("oauth_creds"):
+        parts.append("oauth")
     if cli_path:
         parts.append(f"cli:{cli}")
     elif legacy_path:
         parts.append(f"cli:{cli_legacy}(legacy)")
 
-    has_cred = has_key or (oauth and (cli_path or legacy_path))
+    has_cred = has_key or has_oauth
 
     api_ok = None
     if do_call and has_key and spec.get("probe_api"):
@@ -1776,15 +1842,35 @@ def probe_provider(pid: str, spec: dict, do_call: bool = False) -> dict:
     if spec.get("free") and (cli_path or legacy_path):
         conn = "connected"
 
-    # gemini special-case: interactive CLI (gemini) EOL 2026-06-18 → agy.
-    # If neither agy nor legacy present but API key is, it's api-only (usable, 🟡).
-    if pid == "gemini" and not cli_path and not legacy_path and has_key:
-        conn = "partial"
-        parts.append("api-only (agy 미설치)")
+    # An API key alone is a real credential — the provider is routable (🟢);
+    # note that it's the metered path and no login CLI is around.
+    if has_key and not has_oauth and not cli_path and not legacy_path:
+        parts.append(f"api-only ({cli} 미설치)" if cli else "api-only")
+    # Retired OAuth client: the login CLI is installed and may even hold creds,
+    # but that road is closed permanently. Never say "미로그인" here — the user
+    # very likely *did* log in; the key is the only way back to 🟢.
+    elif retired and (cli_path or legacy_path):
+        if not has_key:
+            # Cause → action, short enough to survive the status column; the
+            # full story lives in `effi connect <p>`. Credentials on disk mean
+            # the user already tried the login, so name the retirement; without
+            # them, just ask for the key.
+            # insert(0): the status column truncates, so the one thing the user
+            # must act on has to come before "cli:…" — not after it.
+            parts.insert(0, "oauth 폐기 → 키 필요" if creds_file
+                         else (f"키 필요({key_env})" if key_env else "키 필요"))
+            conn = "partial"
+    # Login CLI installed but the subscription login was never done. Without a
+    # key there is nothing to route with (🟡) — with one, the key carries it.
+    elif (cli_path or legacy_path) and spec.get("oauth_creds") and not has_oauth:
+        parts.append("미로그인(키 사용)" if has_key else "미로그인")
+        if not has_key:
+            conn = "partial"
 
     return {"id": pid, "label": spec.get("label", pid), "connection": conn,
             "detail": ", ".join(parts) or "no credential",
-            "cli": cli, "has_key": has_key, "api_ok": api_ok}
+            "cli": cli, "has_key": has_key, "has_oauth": has_oauth,
+            "oauth_creds": creds_file, "api_ok": api_ok}
 
 
 def preflight(probe: bool = False, task_hint: Optional[str] = None) -> dict:
@@ -1795,7 +1881,10 @@ def preflight(probe: bool = False, task_hint: Optional[str] = None) -> dict:
     for pid, spec in provs.items():
         pr = probe_provider(pid, spec, do_call=probe)
         pr["headroom"] = estimate_headroom(pid, spec, summ)
-        pr["best_for"] = _PROVIDER_BEST_FOR.get(spec.get("models_provider", pid), "—")
+        # Prefer a provider-specific label, then the model family it bills as:
+        # antigravity prices like gemini but is a very different thing to run.
+        pr["best_for"] = (_PROVIDER_BEST_FOR.get(pid)
+                          or _PROVIDER_BEST_FOR.get(spec.get("models_provider", pid), "—"))
         results.append(pr)
     band = assess_task_importance(task_hint).get("band") if task_hint else None
     return {"at": datetime.now().isoformat(timespec="minutes"),
@@ -1827,10 +1916,29 @@ def recommend_mode(providers: list, importance_band: Optional[str] = None) -> di
     return {"mode": "cruise", "reason": "기본 균형 운용"}
 
 
+def _dpad(s: str, width: int) -> str:
+    """ljust by terminal display width — CJK/emoji count 2 (see _dwidth).
+
+    Status columns carry Korean labels ('미로그인', '무료(로컬)'), so padding by
+    len() drifts by one cell per wide char and shears the table.
+    """
+    return s + " " * max(0, width - _dwidth(s))
+
+
+def _id_col_width(providers: list, minimum: int = 9) -> int:
+    """Provider-id column width: the longest id plus a gap, never below the
+    historical 9 so short-list output keeps its familiar shape."""
+    longest = max((len(str(p.get("id") or "")) for p in providers), default=0)
+    return max(minimum, longest + 1)
+
+
 def format_preflight(pf: dict) -> str:
     lines = [f"effi preflight — {pf.get('at','')}", ""]
-    lines.append(f"  {'Provider':<11}{'Connection':<24}{'Usage (~추정)':<16}Best for")
-    lines.append("  " + "─" * 9 + "  " + "─" * 22 + "  " + "─" * 14 + "  " + "─" * 16)
+    # Width comes from the data, not a constant: a hard-coded :<9 silently ate
+    # the gap for any id longer than 9 chars ("antigravitycli:agy").
+    idw = _id_col_width(pf["providers"])
+    lines.append(f"  {'Provider':<{idw + 2}}{_dpad('Connection', 24)}{_dpad('Usage (~추정)', 16)}Best for")
+    lines.append("  " + "─" * idw + "  " + "─" * 22 + "  " + "─" * 14 + "  " + "─" * 16)
     for p in pf["providers"]:
         icon = _CONN_ICON.get(p["connection"], "·")
         hz = p.get("headroom") or {}
@@ -1842,7 +1950,7 @@ def format_preflight(pf: dict) -> str:
             usage = "~여유(구독)"
         else:
             usage = "~예산미설정"
-        lines.append(f"  {icon} {p['id']:<9}{p['detail']:<24}{usage:<16}{p.get('best_for','—')}")
+        lines.append(f"  {icon} {p['id']:<{idw}}{_dpad(p['detail'], 24)}{_dpad(usage, 16)}{p.get('best_for','—')}")
     rec = pf["mode_recommendation"]
     cur = pf.get("current_mode") or {}
     modes = {m["id"]: m for m in list_modes()}
@@ -1861,7 +1969,7 @@ def format_preflight(pf: dict) -> str:
 # effi-code is, shows which providers are connected, and guides the user
 # through each provider's OWN first-party login. It NEVER proxies subscription
 # OAuth through a router (ToS hard-no) — it only points to / runs the provider's
-# native auth (codex login, agy, claude, …) or an API-key env var.
+# native auth (codex login, gemini, claude, …) or an API-key env var.
 
 def onboarding_intro() -> str:
     """One-paragraph effi-code explainer — single source of truth reused by the
@@ -1881,14 +1989,16 @@ def onboarding_intro() -> str:
 _CONNECT_LOGIN = {
     "claude": "claude  (구독 로그인)  또는  export ANTHROPIC_API_KEY=…",
     "codex":  "codex login  (ChatGPT 구독)  또는  export OPENAI_API_KEY=…",
-    "gemini": "agy  (Antigravity 로그인)  또는  export GEMINI_API_KEY=…",
+    "gemini": "export GEMINI_API_KEY=…  (aistudio.google.com/apikey)  — 개인용 Google 로그인은 폐기됨",
+    "antigravity": "agy  (Antigravity IDE 로그인을 OS 키체인에서 공유 — AI Pro/Ultra 구독 사용)",
     "grok":   "grok  (로그인)  또는  export XAI_API_KEY=…",
     "local":  "ollama serve  (설치: https://ollama.com)",
 }
 _CONNECT_CMD = {
     "claude": ["claude"],
     "codex":  ["codex", "login"],
-    "gemini": ["agy"],
+    "gemini": ["gemini"],
+    "antigravity": ["agy"],
     "grok":   ["grok"],
     "local":  ["ollama", "serve"],
 }
@@ -1908,16 +2018,25 @@ def connect_hint(pid: str, spec: dict) -> dict:
         if env:
             bits.append(f"export {env}=…")
         login = "  또는  ".join(bits) or "연결법 미정"
-    # gemini: `agy` is Antigravity's assumed interactive CLI, but Antigravity
-    # ships as an IDE (no gemini-style pipe CLI). Be honest — surface the path
-    # that actually works: API key for effi routing, the IDE app for chat.
-    if pid == "gemini":
-        env = spec.get("api_key_env", "GEMINI_API_KEY")
-        if _which(cli) or _which(spec.get("cli_legacy")):
-            login = f"effi connect gemini  (agy 로그인)  ·  또는  export {env}=… (라우팅)"
-        else:
-            login = (f"export {env}=… (effi 라우팅용)  ·  "
-                     f"대화형은 Antigravity IDE 앱  (agy CLI 미존재)")
+    # Registry-driven honesty: if the login CLI isn't installed, the actionable
+    # step is the install command — not "run the login you don't have".
+    install = spec.get("install")
+    retired = oauth_retirement(spec)
+    if retired:
+        # Never route the user into a retired login: it authenticates, writes
+        # credentials, and *then* the provider refuses to serve. The key is the
+        # only remaining way in, so lead with it — installing the CLI or
+        # re-running the login would both be dead ends.
+        env, url = spec.get("api_key_env"), spec.get("api_key_url")
+        login = f"export {env}=…" if env else "API 키 필요"
+        if url:
+            login += f"  ({url})"
+        login += f"  ·  개인용(무료·AI Pro·Ultra) 로그인은 {retired} 폐기"
+    elif install and not _which(cli) and not _which(spec.get("cli_legacy")):
+        env = spec.get("api_key_env")
+        login = f"{install}  →  effi connect {pid}  (구독 로그인)"
+        if env:
+            login += f"  ·  또는  export {env}=… (종량제 라우팅)"
     return {
         "id": pid,
         "label": spec.get("label", pid),
@@ -1926,22 +2045,80 @@ def connect_hint(pid: str, spec: dict) -> dict:
         "cli_legacy": spec.get("cli_legacy"),
         "api_key_env": spec.get("api_key_env"),
         "cmd": cmd,
+        "install": install,
+        "oauth_creds": oauth_creds_path(spec),
         "note": spec.get("note"),
     }
 
 
+def _retired_guide(pid: str, spec: dict, retired: str) -> str:
+    """What to do when a provider has retired the login effi used to run.
+
+    Built from the registry so a future retirement needs no code change: set
+    `oauth_retired` (+ optional `oauth_retired_note`, `api_key_url`) and the
+    guidance follows.
+    """
+    lines = [f"· {pid} 개인용 로그인(무료·유료 AI Pro/Ultra 모두)은 {retired}에 "
+             "폐기됐습니다 — 로그인 자체는 성공하지만 이후 호출이 거부됩니다."]
+    note = spec.get("oauth_retired_note")
+    if note:
+        lines.append(f"  {note}")
+    lines.append("  연결법:")
+    step = 1
+    url = spec.get("api_key_url")
+    if url:
+        lines.append(f"    {step}) 키 발급: {url}")
+        step += 1
+    env_name = spec.get("api_key_env")
+    if env_name:
+        lines.append(f"    {step}) export {env_name}=…   (셸 프로필에 추가해 세션마다 유지)")
+        step += 1
+    lines.append(f"    {step}) 확인: effi connect")
+    return "\n".join(lines)
+
+
 def connect_command(pid: str, spec: dict) -> dict:
     """Resolve the interactive login command for `effi connect <pid>`.
-    available=True only when the login binary is on PATH (else guide install)."""
+    available=True only when the login binary is on PATH (else guide install).
+
+    `env` carries provider hints that preselect the *subscription* login in the
+    CLI's own auth picker (e.g. Gemini's oauth-personal = Login with Google), so
+    the user lands on the right choice instead of an API-key prompt. It only
+    seeds that CLI's native flow — no OAuth is ever proxied through effi.
+    """
     h = connect_hint(pid, spec)
-    cmd = h.get("cmd") or []
+    cmd = list(h.get("cmd") or [])
     binary = cmd[0] if cmd else None
+    # primary login CLI missing but the legacy/alternate one is installed → use it
+    if binary and not _which(binary):
+        legacy = spec.get("cli_legacy")
+        if legacy and _which(legacy):
+            cmd[0] = binary = legacy
+
+    # A retired OAuth client has no interactive login left to run — seeding its
+    # auth picker would walk the user straight into the refusal. Hand back a
+    # guide instead of a command, and drop the auth-type seed entirely.
+    retired = oauth_retirement(spec)
+    guide = _retired_guide(pid, spec, retired) if retired else None
+
+    env = {}
+    auth_type = spec.get("oauth_auth_type")
+    if auth_type and pid == "gemini" and not retired:
+        env["GEMINI_DEFAULT_AUTH_TYPE"] = auth_type
+
     return {
         "id": pid,
         "cmd": cmd,
         "binary": binary,
-        "available": bool(binary and _which(binary)),
+        "available": bool(binary and _which(binary)) and not retired,
         "login": h.get("login"),
+        "install": spec.get("install"),
+        "env": env,
+        # Credentials may still sit on disk after the client was retired, but
+        # they buy nothing — reporting them as a login would be a lie.
+        "logged_in": bool(oauth_creds_path(spec)) and not retired,
+        "oauth_retired": retired,
+        "guide": guide,
         "api_key_env": h.get("api_key_env"),
     }
 
@@ -2531,8 +2708,9 @@ def providers_detail(probe: bool = False) -> dict:
 
 def format_providers(detail: dict) -> str:
     lines = [f"effi providers — {detail.get('at','')}", ""]
-    lines.append(f"  {'Provider':<11}{'Connection':<22}{'Used':<12}{'Budget':<10}Remaining (~추정)")
-    lines.append("  " + "─" * 9 + "  " + "─" * 20 + "  " + "─" * 10 + "  " + "─" * 8 + "  " + "─" * 16)
+    idw = _id_col_width(detail["providers"])
+    lines.append(f"  {'Provider':<{idw + 2}}{_dpad('Connection', 22)}{'Used':<12}{'Budget':<10}Remaining (~추정)")
+    lines.append("  " + "─" * idw + "  " + "─" * 20 + "  " + "─" * 10 + "  " + "─" * 8 + "  " + "─" * 16)
     for p in detail["providers"]:
         icon = _CONN_ICON.get(p["connection"], "·")
         hz = p.get("headroom") or {}
@@ -2547,7 +2725,7 @@ def format_providers(detail: dict) -> str:
         else:
             remaining = "~예산미설정"
         ev = (p.get("usage") or {}).get("events") or 0
-        lines.append(f"  {icon} {p['id']:<9}{p['detail']:<22}{used:<12}{budget:<10}{remaining}  · {ev}건")
+        lines.append(f"  {icon} {p['id']:<{idw}}{_dpad(p['detail'], 22)}{used:<12}{budget:<10}{remaining}  · {ev}건")
     lines += [
         "",
         f"  누적 추정: ${detail.get('total_usd', 0):.2f}   |   원장: {detail.get('ledger')}",
@@ -2919,14 +3097,17 @@ def launch_plan(rec: dict, task_text: str = "") -> dict:
         ]
         warning = "Do not move the main Claude conversation mid-session (cache)"
     elif prov == "gemini":
-        exec_cmd = "gemini"
+        exec_cmd = f'gemini -m {model} -p "<your prompt>"'
         steps = [
             f"Isolated subtask on Gemini · {model}",
             "Use for design/multimodal/research slices",
+            f'Headless: gemini -m {model} -p "…"   (GEMINI_API_KEY 사용, -o json 가능)',
+            "키 없으면 즉시 실패 — 발급/설정: effi connect gemini",
             "Save artifacts under tasks/<job>/workers/<role>/",
             "Summarize back to Claude lead",
         ]
-        warning = "Optional CLI; API/AI Studio also fine"
+        warning = ("GEMINI_API_KEY(종량제)가 유일한 경로 — 개인용 Login with Google은 "
+                   "2026-07 폐기(IneligibleTierError). 구독은 Antigravity IDE 전용")
     elif prov == "grok":
         exec_cmd = "grok"
         steps = [

@@ -27,7 +27,7 @@
 | Claude 구독(Pro/Max) | ❌ 불가 (rate-limit 방식, 조회 API 없음) | 로컬 추정 원장 |
 | Codex / OpenAI | ⚠️ 사실상 폐기·지연 | 로컬 추정 원장 (+ 있으면 조회) |
 | Gemini | ⚠️ GCP 빌링, 간단 조회 없음 | 로컬 추정 원장 |
-| **Gemini CLI** | 🔴 **사멸됨 (2026-06-18 소비자 요청 중단)** | 대화형은 **Antigravity CLI `agy`**로 전환, API는 별개로 유지 |
+| **Gemini CLI** | ✅ 바이너리는 현역 (`@google/gemini-cli` v0.52.0) / ❌ 개인용 OAuth는 폐기 | `oauth-personal` 로그인은 성공해도 호출이 `IneligibleTierError(UNSUPPORTED_CLIENT)`로 거부 — 라우팅은 `GEMINI_API_KEY` 단일 경로 (v4.8.0 실측) |
 | Grok / xAI | ⚠️ 콘솔 위주 | 로컬 추정 원장 |
 
 → **결정(합의됨): 크레딧 = "로컬 추정 원장(local usage-estimation ledger)".**
@@ -72,11 +72,17 @@
     },
     "codex":  { "cli": "codex",  "credential": {"api_key_env": "OPENAI_API_KEY"}, "probe": "api_models", "credit_source": "ledger",
                 "budget": { "unit": "usd", "amount": 0 } },
-    // Gemini는 두 경로 분리: (a) 대화형 에이전트 CLI는 gemini→agy(Antigravity) 전환, (b) 라우팅용 API는 키 유지
-    "gemini": { "cli": "agy", "cli_legacy": "gemini", "credential": {"api_key_env": "GEMINI_API_KEY", "cli_auth": "google_oauth"},
-                "probe": "cli_present_or_api", "credit_source": "ledger",
+    // Gemini는 단일 경로: 개인용 OAuth가 폐기돼 API 키만 남았다.
+    // oauth_creds는 남겨두되(파일은 여전히 생김) oauth_retired가 그것을 무효화한다.
+    "gemini": { "cli": "gemini",
+                "credential": {"api_key_env": "GEMINI_API_KEY", "cli_auth": "google_oauth",
+                               "oauth_creds": ["~/.gemini/oauth_creds.json"],
+                               "api_key_url": "https://aistudio.google.com/apikey"},
+                "oauth_retired": "2026-07",
+                "probe": "oauth_creds_or_api", "credit_source": "ledger",
                 "budget": { "unit": "usd", "amount": 0 },
-                "note": "gemini CLI 2026-06-18 사멸 → agy(Antigravity). API(GEMINI_API_KEY)는 라우팅용으로 별개 유지" },
+                "install": "npm i -g @google/gemini-cli",
+                "note": "개인용 Code Assist 클라이언트 폐기 — 라우팅 가능한 자격증명은 GEMINI_API_KEY 하나" },
     "grok":   { "cli": "grok",   "credential": {"api_key_env": "XAI_API_KEY"},    "probe": "cli_present_or_api", "credit_source": "ledger",
                 "budget": { "unit": "usd", "amount": 0 } }
   }
@@ -192,13 +198,56 @@ Claude Code 커스텀 statusline 스크립트(`bin/effi-statusline`) 신설:
 1. **예산 단위 → USD 통일 추정.** 모든 프로바이더를 USD 기준으로 추정한다. 토큰 사용량 × models.json 단가로 `est_usd`를 산출해 예산(USD) 대비 차감. 조회 불가한 구독형(Claude Pro, Antigravity Google 계정)도 "환산 추정 USD"로 표기하되 `~추정(구독)` 라벨 유지.
 2. **프로브 강도 → 존재 확인 + 선택적 실호출.** 기본은 credential/CLI 존재 확인(빠름), `--probe` 플래그 또는 preflight 시 선택적으로 실제 API models 호출로 승격.
 3. **넛지 빈도 → mode_fit 변화 시 + 최소 5턴 간격.** 확정.
-4. **Gemini 경로 → Antigravity CLI(`agy`)로 전환 + API 별개 유지.**
-   - **근거**: Gemini CLI는 2026-06-18자로 소비자 요청 처리 중단(사멸). 대체는 Antigravity CLI, 바이너리 `agy`(설치 `~/.local/bin/agy`), 인증은 Google 계정 OAuth.
-   - **결정**: 대화형 에이전트 경로는 `gemini`→`agy` 프로브로 교체. 단 effi 라우팅이 Gemini를 **API로 직접 호출**하는 경로(GEMINI_API_KEY, models.json의 gemini api_id)는 사멸과 무관하므로 그대로 유지.
-   - **doctor 영향**: `which gemini`(레거시)는 유지하되 없으면 `which agy`로 폴백, `agy`도 없고 API 키만 있으면 🟡(API-only)로 판정.
-   - **확인 필요(경미)**: 사용자가 Gemini를 대화형(`agy`)으로 쓸지 API 라우팅으로만 쓸지 — P1에서 providers.json 기본값으로 API-우선 설정 후 필요 시 조정.
+4. ~~**Gemini 경로 → Antigravity CLI(`agy`)로 전환 + API 별개 유지.**~~
+   **철회 (2026-07-26, v4.8.0).** 근거로 삼은 "Gemini CLI 2026-06-18 사멸"이
+   사실이 아니었다. `@google/gemini-cli`는 계속 배포 중이고(확인 시점 stable
+   v0.52.0 + nightly 일일 배포) Google 계정 OAuth로 구독/무료티어를 그대로 쓴다.
+   잘못된 전제 위에 세운 `cli: agy` 매핑·doctor 폴백·"api-only" 특례가 Gemini를
+   사실상 API 키 전용으로 막고 있었다.
 
-## 11. 참고 출처 (Gemini/Antigravity 전환)
+5. **Gemini 경로 (최종) → 개인 계정은 `GEMINI_API_KEY` 단일 경로. Standard/Enterprise는 유지.**
+   `gemini` CLI는 살아있지만(v0.52.x) Google이 **2026-06-18자로 Gemini Code Assist
+   for individuals** — 무료 + **유료 AI Pro/Ultra 전부** — 요청 처리를 중단해
+   `oauth-personal` 경로가 서버에서 막혔다. 로그인은 성공하고
+   `~/.gemini/oauth_creds.json`도 정상 기록되는데 호출에서
+   `IneligibleTierError(UNSUPPORTED_CLIENT, tierId: free-tier)`로 거부된다(rc=55, 실측).
+   `UNSUPPORTED_CLIENT`는 CLI enum에 없는 **서버 발급 코드** — 업그레이드로 안 풀린다.
+   - **개인 계정의 유일한 라우팅 경로**: `GEMINI_API_KEY` (발급 `https://aistudio.google.com/apikey`).
+   - **유료도 동일하게 차단**: 공식 문서가 individuals/AI Pro/AI Ultra 세 티어를 함께 명시.
+   - **Standard/Enterprise는 영향 없음** — 라이선스된 GCP 프로젝트로 동작하므로
+     `GOOGLE_CLOUD_PROJECT`가 설정되면 폐기 판정을 적용하지 않는다
+     (`oauth_retired_unless_env`). 살아있는 로그인을 죽었다고 하는 것도 같은 크기의 거짓말.
+   - **개인 구독 이전 경로**: Antigravity CLI `agy`(실존 확인, curl 설치, 헤드리스 `-p`).
+     effi 라우팅 편입은 **미검증 — 설치·실측 후 결정**.
+   - **connect**: `effi connect gemini`는 **실행하지 않고 안내만** 한다. 죽은 로그인을
+     띄우는 것은 "인증 성공 → 거부"라는 최악의 경로로 사용자를 밀어넣는 일이다.
+   - **헤드리스**: `gemini -m <model> -p "…"`(`-o json`) — 키 필요.
+   - **doctor/probe 영향**: `agy`는 존재하지 않으므로 레지스트리에서 제거.
+     `oauth_retired`가 선언된 프로바이더는 자격증명 파일이 있어도 🟢을 얻지 못하며
+     `oauth 폐기 → 키 필요` 🟡로 표시한다(`미로그인` 아님 — 로그인은 했으므로).
+     gemini 전용 "api-only 특례"는 제거하고 전 프로바이더 공통 규칙으로 통일 —
+     키만 있어도 라우팅 가능하므로 🟢, `api-only`는 라벨로만 표기.
 
-- Google Developers Blog — Gemini CLI → Antigravity CLI 전환 공지 (2026-06-18 소비자 중단)
-- Antigravity CLI docs/install — 바이너리 `agy`, `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Google 계정 OAuth
+## 11. 참고 출처 (Gemini 인증 경로)
+
+- npm `@google/gemini-cli` — stable v0.52.0, nightly 일일 배포 (2026-07-26 확인)
+- gemini CLI 번들 실측 — 인증 타입 `oauth-personal`(LOGIN_WITH_GOOGLE) /
+  `gemini-api-key` / `vertex-ai`, 설정 키 `security.auth.selectedType`,
+  자격증명 `~/.gemini/oauth_creds.json`, 계정 `~/.gemini/google_accounts.json`,
+  선택 오버라이드 `GEMINI_DEFAULT_AUTH_TYPE`
+- **공식 폐기 공지** — developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals:
+  *"Starting June 18, 2026, Gemini Code Assist IDE extensions stopped serving requests
+  for the Gemini Code Assist for individuals, Google AI Pro, and Google AI Ultra tiers"* /
+  *"access to … Gemini CLI using Gemini Code Assist Standard or Enterprise subscriptions
+  remain unchanged"*
+- 유료 사용자 실사례 — google-gemini/gemini-cli#28229 (AI Pro 구독자 동일 에러, open, p1)
+- Antigravity CLI 실존 — antigravity.google/docs/cli/install (`agy`, curl 설치 스크립트).
+  v4.6.1의 `agy` 가정은 "그때는 없었다"가 아니라 **미검증 추정**이었고, 지금은 실존한다.
+- **`oauth-personal` 폐기 실측 (2026-07-26)** — Google 로그인 2회 성공 후
+  `gemini -p "say OK"` → rc=55,
+  `IneligibleTierError … reasonCode: UNSUPPORTED_CLIENT, tierId: free-tier,
+  tierName: Gemini Code Assist for individuals`,
+  안내 링크 `https://antigravity.google`. 이 실측이 v4.8.0 초안의
+  "oauth-personal로 구독/무료티어 사용" 서술을 무효화했다.
+- ~~Google Developers Blog — Gemini CLI → Antigravity CLI 전환 공지~~ (v4.6.1이
+  근거로 삼았으나 재확인 실패 — 이 문서의 사멸 서술은 철회)
