@@ -6,10 +6,10 @@ deny rules), write it only after the user approves, and *prove* it works by
 breaking a copy of the project on purpose.
 
 Why a floor and not recommendations: Anthropic's claude-code-setup already
-recommends project-specific skills well. Measured on picknow-ops (H1,
-docs/01-plan/v5-direction.md §6.2), what it missed was the floor that lets a
-machine judge the result — the part with the strongest evidence. That is what
-this module builds. Domain hooks stay with claude-code-setup.
+recommends project-specific skills well. Measured against a real project's
+hand-built harness, what it missed was the floor that lets a machine judge
+the result — the part with the strongest evidence. That is what this module
+builds. Domain hooks stay with claude-code-setup.
 
 Rules carried over from picknow-ops (each cost an incident there):
   - "cannot judge" is not a pass: a step that counted 0 things exits 2.

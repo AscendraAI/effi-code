@@ -1,13 +1,13 @@
 # Design — `effi delegate`: the bridge from Claude to other providers
 
-> Status: **SHIPPED v1** (2026-10-03) — reviewed three times by Codex (design + two code passes, the last through `effi delegate` itself); see §7 · plan: docs/01-plan/v5-direction.md §3 · §7 (H6) · §6.3 (H4)
+> Status: **SHIPPED v1** (2026-10-03) — reviewed three times by Codex (design + two code passes, the last through `effi delegate` itself); see §7
 
 ## 1. What it is (and is not)
 
 Claude Code's native orchestration only drives Claude models. `effi delegate`
 lets the Claude main thread hand one task to Codex, Gemini, Grok or a local
 model **through their own official CLIs**, and get back **paths + a short
-summary**. It owns only five things — the parts nobody else does (H6):
+summary**. It owns only five things — the parts the existing bridges (codex-plugin-cc, PAL MCP, …) leave open:
 
 | | effi does | effi does not |
 |---|---|---|
@@ -67,7 +67,7 @@ lines: decision, status, summary tail, paths.
 
 ## 6. Out of scope (v1)
 
-Per-agent policy rendering (H4 finding 2: Codex gets no effi policy) — the
+Per-agent policy rendering (measured: a Codex worker gets none of effi's Claude-side policy) — the
 verify gate is the agent-agnostic guard for now. Antigravity (`agy`: 38 s
 start, needs a file redirect). Parallel fan-out (Orca / Workflows do that).
 

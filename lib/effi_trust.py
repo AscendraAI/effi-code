@@ -14,7 +14,8 @@ Secrets: nothing user-written is printed or stored verbatim. Hook commands,
 MCP args after an option flag, URL userinfo/query and env/header values are
 never shown; they only enter a keyed fingerprint.
 
-Evidence for the rules: docs/01-plan/v5-direction.md §4.4 · §6.1 (H2).
+Evidence for the rules: postmark-mcp (2025-09), Snyk ToxicSkills (2026-02),
+CVE-2025-54136, and an audit of a real developer machine (2026-10-03).
 Review 2026-10-03 (clean context) found 13 issues in the first cut; each fixed
 one has a regression test in tests/test_trust.py.
 """

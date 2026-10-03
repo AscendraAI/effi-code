@@ -96,7 +96,7 @@ caps CLAUDE.md/AGENTS.md at 150 lines; a stack it can't check yields ⛔, not �
   and a gitignored `.claude/`.
 - Why a floor and not recommendations: Anthropic's `claude-code-setup` already
   recommends project-specific skills well; measured against picknow-ops it
-  missed the judging floor (docs/01-plan/v5-direction.md §6.2).
+  missed the judging floor.
 - A clean-context review found 8 false-pass paths before release (empty floor,
   non-ASCII paths, one test dir only, subdirectory arming, substring proofs,
   disarmed `.git/hooks`, string-mention selftests, zsh as bash); each has a
@@ -107,8 +107,7 @@ Automatic threshold rotation (`effi accounts select` without an id, `meter`,
 `env`, `apply`, `effi`) now moves between **API-key accounts only**. An
 `oauth_profile` is used only when you name it: `effi accounts select --id <id>`.
 Cycling several Claude subscriptions to get past usage limits is the pattern
-Anthropic's terms bar for third-party tools, and effi is heading for a public,
-commercial release. If every enabled account is a profile, automatic selection
+Anthropic's terms bar for third-party tools. If every enabled account is a profile, automatic selection
 returns `no_rotatable_accounts` instead of picking one. Tests: `tests/test_accounts.py`.
 
 ### Fixed — CI red since v4.7.1: launch line and resume screen (2026-10-03)
