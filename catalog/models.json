@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "catalog_version": "2026.07.21",
-  "updated_at": "2026-07-21",
-  "next_review_due": "2026-08-04",
-  "last_verified_at": "2026-07-21",
+  "catalog_version": "2026.10.03",
+  "updated_at": "2026-10-03",
+  "next_review_due": "2026-10-17",
+  "last_verified_at": "2026-10-03",
   "sources": [
     "https://platform.claude.com/docs/en/about-claude/models/overview",
     "https://developers.openai.com/api/docs/models",
@@ -13,199 +13,525 @@
     "https://ollama.com/library/qwen3-coder",
     "https://ollama.com/library/devstral",
     "https://www.anthropic.com/engineering/multi-agent-research-system",
-    "https://cognition.com/blog/multi-agents-working"
+    "https://cognition.com/blog/multi-agents-working",
+    "https://ai.google.dev/gemini-api/docs/pricing",
+    "https://docs.x.ai/developers/pricing"
   ],
   "notes": "IDs and prices re-checked against official docs on last_verified_at. USD per 1M tokens (input/output) unless noted. Prefer stable aliases. Re-run `effi catalog research` then edit + `effi catalog bump` every ~14 days. Local tags are Ollama pull names — prefer capacity-aware pick over a fixed model.",
   "providers": {
     "claude": {
       "harness": "claude",
-      "auth": ["api_key", "subscription_oauth"],
+      "auth": [
+        "api_key",
+        "subscription_oauth"
+      ],
       "cache_friendly_main_thread": true,
       "docs": "https://platform.claude.com/docs/en/about-claude/models/overview",
       "models": {
+        "claude-fable-5-1": {
+          "tier": "ultra",
+          "role": [
+            "orchestrate",
+            "architecture",
+            "long_agent"
+          ],
+          "cost_in": 10.0,
+          "cost_out": 50.0,
+          "ctx": 1000000,
+          "api_id": "claude-fable-5-1",
+          "status": "current",
+          "strengths": [
+            "long_horizon_agents",
+            "hardest_reasoning",
+            "adaptive_thinking"
+          ],
+          "weaknesses": [
+            "expensive",
+            "slower"
+          ],
+          "notes": "Most capable widely released Claude (GA 2026-06-09). Mythos 5 is invite-only."
+        },
         "claude-fable-5": {
           "tier": "ultra",
-          "role": ["orchestrate", "architecture", "long_agent"],
+          "role": [
+            "orchestrate",
+            "architecture",
+            "long_agent"
+          ],
           "cost_in": 10.0,
           "cost_out": 50.0,
           "ctx": 1000000,
           "api_id": "claude-fable-5",
+          "status": "previous",
+          "strengths": [
+            "long_horizon_agents",
+            "hardest_reasoning",
+            "adaptive_thinking"
+          ],
+          "weaknesses": [
+            "expensive",
+            "slower"
+          ],
+          "notes": "Most capable widely released Claude (GA 2026-06-09). Mythos 5 is invite-only.",
+          "superseded_by": "claude-fable-5-1"
+        },
+        "claude-opus-5-5": {
+          "tier": "top",
+          "role": [
+            "orchestrate",
+            "architecture",
+            "debug_hard",
+            "security",
+            "review_adversarial"
+          ],
+          "cost_in": 4.0,
+          "cost_out": 20.0,
+          "ctx": 1000000,
+          "api_id": "claude-opus-5-5",
           "status": "current",
-          "strengths": ["long_horizon_agents", "hardest_reasoning", "adaptive_thinking"],
-          "weaknesses": ["expensive", "slower"],
-          "notes": "Most capable widely released Claude (GA 2026-06-09). Mythos 5 is invite-only."
+          "strengths": [
+            "agentic_coding",
+            "enterprise",
+            "judgment",
+            "honesty"
+          ],
+          "weaknesses": [
+            "cost"
+          ],
+          "notes": "Default complex agentic coding / enterprise. effort defaults high on API + Claude Code."
         },
         "claude-opus-4-8": {
           "tier": "top",
-          "role": ["orchestrate", "architecture", "debug_hard", "security", "review_adversarial"],
+          "role": [
+            "orchestrate",
+            "architecture",
+            "debug_hard",
+            "security",
+            "review_adversarial"
+          ],
           "cost_in": 5.0,
           "cost_out": 25.0,
           "ctx": 1000000,
           "api_id": "claude-opus-4-8",
-          "status": "current",
-          "strengths": ["agentic_coding", "enterprise", "judgment", "honesty"],
-          "weaknesses": ["cost"],
-          "notes": "Default complex agentic coding / enterprise. effort defaults high on API + Claude Code."
+          "status": "previous",
+          "strengths": [
+            "agentic_coding",
+            "enterprise",
+            "judgment",
+            "honesty"
+          ],
+          "weaknesses": [
+            "cost"
+          ],
+          "notes": "Default complex agentic coding / enterprise. effort defaults high on API + Claude Code.",
+          "superseded_by": "claude-opus-5-5"
         },
         "claude-sonnet-5": {
           "tier": "mid",
-          "role": ["implement", "refactor", "test", "docs", "review_style"],
-          "cost_in": 3.0,
-          "cost_out": 15.0,
+          "role": [
+            "implement",
+            "refactor",
+            "test",
+            "docs",
+            "review_style"
+          ],
+          "cost_in": 2.0,
+          "cost_out": 10.0,
           "ctx": 1000000,
           "api_id": "claude-sonnet-5",
           "status": "current",
-          "strengths": ["speed_intelligence_balance", "default_coding"],
-          "weaknesses": ["not_for_hardest_judgment"],
+          "strengths": [
+            "speed_intelligence_balance",
+            "default_coding"
+          ],
+          "weaknesses": [
+            "not_for_hardest_judgment"
+          ],
           "notes": "Introductory pricing $2/$10 MTok through 2026-08-31; catalog keeps list price $3/$15."
         },
         "claude-haiku-4-5": {
           "tier": "cheap",
-          "role": ["scan", "summarize", "boilerplate", "format"],
+          "role": [
+            "scan",
+            "summarize",
+            "boilerplate",
+            "format"
+          ],
           "cost_in": 1.0,
           "cost_out": 5.0,
           "ctx": 200000,
           "api_id": "claude-haiku-4-5-20251001",
           "api_alias": "claude-haiku-4-5",
           "status": "current",
-          "strengths": ["fast", "cheap", "near_frontier_simple"],
-          "weaknesses": ["shallow_architecture"]
+          "strengths": [
+            "fast",
+            "cheap",
+            "near_frontier_simple"
+          ],
+          "weaknesses": [
+            "shallow_architecture"
+          ]
         }
       }
     },
     "openai": {
-      "harness": ["codex", "api"],
-      "auth": ["api_key", "chatgpt_subscription"],
+      "harness": [
+        "codex",
+        "api"
+      ],
+      "auth": [
+        "api_key",
+        "chatgpt_subscription"
+      ],
       "docs": "https://developers.openai.com/api/docs/models",
       "models": {
+        "gpt-6-astra": {
+          "tier": "top",
+          "role": [
+            "architecture",
+            "debug_hard",
+            "complex_reasoning",
+            "implement_hard"
+          ],
+          "cost_in": 10.0,
+          "cost_out": 50.0,
+          "ctx": 1050000,
+          "api_id": "gpt-6-astra",
+          "status": "current",
+          "strengths": [
+            "complex_professional",
+            "coding",
+            "reasoning"
+          ],
+          "weaknesses": [
+            "expensive"
+          ],
+          "notes": "Flagship for complex reasoning and coding. knowledge cutoff 2026-02-16."
+        },
         "gpt-5.6-sol": {
           "alias": "gpt-5.6",
           "tier": "top",
-          "role": ["architecture", "debug_hard", "complex_reasoning", "implement_hard"],
-          "cost_in": 5.0,
-          "cost_out": 30.0,
+          "role": [
+            "architecture",
+            "debug_hard",
+            "complex_reasoning",
+            "implement_hard"
+          ],
+          "cost_in": 4.0,
+          "cost_out": 20.0,
           "ctx": 1050000,
           "api_id": "gpt-5.6-sol",
+          "status": "previous",
+          "strengths": [
+            "complex_professional",
+            "coding",
+            "reasoning"
+          ],
+          "weaknesses": [
+            "expensive"
+          ],
+          "notes": "Flagship for complex reasoning and coding. knowledge cutoff 2026-02-16.",
+          "superseded_by": "gpt-6-astra"
+        },
+        "gpt-6.1-sol": {
+          "tier": "mid",
+          "role": [
+            "implement",
+            "refactor",
+            "test",
+            "review"
+          ],
+          "cost_in": 2.0,
+          "cost_out": 10.0,
+          "ctx": 1050000,
+          "api_id": "gpt-6.1-sol",
           "status": "current",
-          "strengths": ["complex_professional", "coding", "reasoning"],
-          "weaknesses": ["expensive"],
-          "notes": "Flagship for complex reasoning and coding. knowledge cutoff 2026-02-16."
+          "strengths": [
+            "balance_cost_quality"
+          ],
+          "weaknesses": []
         },
         "gpt-5.6-terra": {
           "tier": "mid",
-          "role": ["implement", "refactor", "test", "review"],
-          "cost_in": 2.5,
-          "cost_out": 15.0,
+          "role": [
+            "implement",
+            "refactor",
+            "test",
+            "review"
+          ],
+          "cost_in": 2.0,
+          "cost_out": 12.0,
           "ctx": 1050000,
           "api_id": "gpt-5.6-terra",
+          "status": "previous",
+          "strengths": [
+            "balance_cost_quality"
+          ],
+          "weaknesses": [],
+          "superseded_by": "gpt-6.1-sol"
+        },
+        "gpt-6-luna": {
+          "tier": "cheap",
+          "role": [
+            "boilerplate",
+            "scaffold",
+            "docs",
+            "bulk",
+            "scan"
+          ],
+          "cost_in": 0.1,
+          "cost_out": 0.5,
+          "ctx": 1050000,
+          "api_id": "gpt-6-luna",
           "status": "current",
-          "strengths": ["balance_cost_quality"],
-          "weaknesses": []
+          "strengths": [
+            "high_volume",
+            "cheap"
+          ],
+          "weaknesses": [
+            "weaker_judgment"
+          ]
         },
         "gpt-5.6-luna": {
           "tier": "cheap",
-          "role": ["boilerplate", "scaffold", "docs", "bulk", "scan"],
-          "cost_in": 1.0,
-          "cost_out": 6.0,
+          "role": [
+            "boilerplate",
+            "scaffold",
+            "docs",
+            "bulk",
+            "scan"
+          ],
+          "cost_in": 0.2,
+          "cost_out": 1.2,
           "ctx": 1050000,
           "api_id": "gpt-5.6-luna",
-          "status": "current",
-          "strengths": ["high_volume", "cheap"],
-          "weaknesses": ["weaker_judgment"]
+          "status": "previous",
+          "strengths": [
+            "high_volume",
+            "cheap"
+          ],
+          "weaknesses": [
+            "weaker_judgment"
+          ],
+          "superseded_by": "gpt-6-luna"
         }
       }
     },
     "gemini": {
-      "harness": ["api", "cli"],
-      "auth": ["api_key"],
+      "harness": [
+        "api",
+        "cli"
+      ],
+      "auth": [
+        "api_key"
+      ],
       "docs": "https://ai.google.dev/gemini-api/docs/models",
       "models": {
         "gemini-3.1-pro-preview": {
           "tier": "top",
-          "role": ["architecture", "multimodal", "research", "design_visual"],
-          "cost_in": null,
-          "cost_out": null,
+          "role": [
+            "architecture",
+            "multimodal",
+            "research",
+            "design_visual"
+          ],
+          "cost_in": 2.0,
+          "cost_out": 12.0,
           "ctx": 1000000,
           "api_id": "gemini-3.1-pro-preview",
           "status": "preview",
-          "strengths": ["multimodal", "deep_reasoning", "vibe_coding", "agentic"],
-          "weaknesses": ["preview_limits"],
-          "notes": "Stable mid coding default is gemini-3.5-flash; use Pro for hard reasoning/research."
+          "strengths": [
+            "multimodal",
+            "deep_reasoning",
+            "vibe_coding",
+            "agentic"
+          ],
+          "weaknesses": [
+            "preview_limits"
+          ],
+          "notes": "Stable mid coding default is gemini-3.5-flash; use Pro for hard reasoning/research.",
+          "price_note": "≤200k prompt; $4/$18 above"
+        },
+        "gemini-3.8-flash": {
+          "tier": "mid",
+          "role": [
+            "implement",
+            "docs",
+            "long_context_scan",
+            "design"
+          ],
+          "cost_in": 0.75,
+          "cost_out": 3.75,
+          "ctx": 1048576,
+          "api_id": "gemini-3.8-flash",
+          "status": "current",
+          "strengths": [
+            "agentic_coding",
+            "sustained_performance",
+            "value"
+          ],
+          "weaknesses": [],
+          "price_note": "intro price through 2026-12-31, then $1.50/$7.50"
         },
         "gemini-3.5-flash": {
           "tier": "mid",
-          "role": ["implement", "docs", "long_context_scan", "design"],
-          "cost_in": null,
-          "cost_out": null,
+          "role": [
+            "implement",
+            "docs",
+            "long_context_scan",
+            "design"
+          ],
+          "cost_in": 1.5,
+          "cost_out": 9.0,
           "ctx": 1000000,
           "api_id": "gemini-3.5-flash",
-          "status": "current",
-          "strengths": ["agentic_coding", "sustained_performance", "value"],
-          "weaknesses": []
+          "status": "previous",
+          "strengths": [
+            "agentic_coding",
+            "sustained_performance",
+            "value"
+          ],
+          "weaknesses": [],
+          "superseded_by": "gemini-3.8-flash"
         },
         "gemini-3.1-flash-lite": {
           "tier": "cheap",
-          "role": ["bulk", "summarize", "scaffold", "translate"],
-          "cost_in": null,
-          "cost_out": null,
+          "role": [
+            "bulk",
+            "summarize",
+            "scaffold",
+            "translate"
+          ],
+          "cost_in": 0.25,
+          "cost_out": 1.5,
           "ctx": 1000000,
           "api_id": "gemini-3.1-flash-lite",
           "status": "current",
-          "strengths": ["cheapest_frontier_class", "speed"],
-          "weaknesses": ["shallow_hard_bugs"]
+          "strengths": [
+            "cheapest_frontier_class",
+            "speed"
+          ],
+          "weaknesses": [
+            "shallow_hard_bugs"
+          ]
         },
         "gemini-3-pro-image": {
           "tier": "special",
-          "role": ["design_image", "ui_mock"],
+          "role": [
+            "design_image",
+            "ui_mock"
+          ],
           "cost_in": null,
           "cost_out": null,
           "api_id": "gemini-3-pro-image",
           "status": "current",
-          "strengths": ["studio_quality_image", "text_in_image"],
-          "weaknesses": ["not_code"],
+          "strengths": [
+            "studio_quality_image",
+            "text_in_image"
+          ],
+          "weaknesses": [
+            "not_code"
+          ],
           "notes": "Nano Banana Pro — image gen/edit, not a coding primary."
         }
       }
     },
     "grok": {
-      "harness": ["api", "grok_build"],
-      "auth": ["api_key"],
+      "harness": [
+        "api",
+        "grok_build"
+      ],
+      "auth": [
+        "api_key"
+      ],
       "docs": "https://docs.x.ai/docs/models",
       "models": {
+        "grok-4.7": {
+          "tier": "top",
+          "role": [
+            "architecture",
+            "debug_hard",
+            "implement_hard",
+            "research_realtime"
+          ],
+          "cost_in": 2.0,
+          "cost_out": 6.0,
+          "ctx": 500000,
+          "api_id": "grok-4.7",
+          "status": "current",
+          "strengths": [
+            "intelligence_speed",
+            "coding",
+            "tool_search"
+          ],
+          "weaknesses": [
+            "long_ctx_price_step"
+          ],
+          "notes": "Prompt ≥200k tokens: $4/$12. Knowledge cutoff 2026-02-01. Enable web/X search for realtime.",
+          "price_note": "<200k prompt; $4/$12 above"
+        },
         "grok-4.5": {
           "tier": "top",
-          "role": ["architecture", "debug_hard", "implement_hard", "research_realtime"],
+          "role": [
+            "architecture",
+            "debug_hard",
+            "implement_hard",
+            "research_realtime"
+          ],
           "cost_in": 2.0,
           "cost_out": 6.0,
           "ctx": 500000,
           "api_id": "grok-4.5",
-          "status": "current",
-          "strengths": ["intelligence_speed", "coding", "tool_search"],
-          "weaknesses": ["long_ctx_price_step"],
-          "notes": "Prompt ≥200k tokens: $4/$12. Knowledge cutoff 2026-02-01. Enable web/X search for realtime."
+          "status": "previous",
+          "strengths": [
+            "intelligence_speed",
+            "coding",
+            "tool_search"
+          ],
+          "weaknesses": [
+            "long_ctx_price_step"
+          ],
+          "notes": "Prompt ≥200k tokens: $4/$12. Knowledge cutoff 2026-02-01. Enable web/X search for realtime.",
+          "superseded_by": "grok-4.7"
         },
         "grok-4.3": {
           "tier": "mid",
-          "role": ["implement", "docs", "review", "long_context"],
+          "role": [
+            "implement",
+            "docs",
+            "review",
+            "long_context"
+          ],
           "cost_in": 1.25,
           "cost_out": 2.5,
           "ctx": 1000000,
           "api_id": "grok-4.3",
           "status": "current",
-          "strengths": ["1M_ctx", "value"],
+          "strengths": [
+            "1M_ctx",
+            "value"
+          ],
           "weaknesses": [],
           "notes": "Prompt ≥200k tokens: $2.50/$5."
         },
         "grok-build-0.1": {
           "tier": "mid",
-          "role": ["implement", "scaffold", "agent_coding"],
+          "role": [
+            "implement",
+            "scaffold",
+            "agent_coding"
+          ],
           "cost_in": 1.0,
           "cost_out": 2.0,
           "ctx": 256000,
           "api_id": "grok-build-0.1",
           "status": "current",
-          "strengths": ["coding_stack_value"],
-          "weaknesses": ["smaller_ctx"],
+          "strengths": [
+            "coding_stack_value"
+          ],
+          "weaknesses": [
+            "smaller_ctx"
+          ],
           "notes": "Prompt ≥200k tokens: $2/$4."
         }
       }
@@ -217,105 +543,207 @@
       "models": {
         "qwen3-coder:30b": {
           "tier": "local_strong",
-          "role": ["implement_narrow", "agent_local", "refactor_local"],
+          "role": [
+            "implement_narrow",
+            "agent_local",
+            "refactor_local"
+          ],
           "ram_gb": 19.0,
           "status": "current",
-          "strengths": ["moe_efficiency", "256k", "agentic", "best_per_vram"],
-          "weaknesses": ["needs_~19-20gb"],
+          "strengths": [
+            "moe_efficiency",
+            "256k",
+            "agentic",
+            "best_per_vram"
+          ],
+          "weaknesses": [
+            "needs_~19-20gb"
+          ],
           "notes": "30B MoE / ~3.3B active. Top local coding pick when RAM allows (Ollama library)."
         },
         "qwen3-coder-next": {
           "tier": "local_strong",
-          "role": ["implement_narrow", "agent_local"],
+          "role": [
+            "implement_narrow",
+            "agent_local"
+          ],
           "ram_gb": 12.0,
           "status": "current",
-          "strengths": ["moe_efficiency", "coding_agents"],
-          "weaknesses": ["newer_tag_sizes_vary"],
+          "strengths": [
+            "moe_efficiency",
+            "coding_agents"
+          ],
+          "weaknesses": [
+            "newer_tag_sizes_vary"
+          ],
           "notes": "Ollama: qwen3-coder-next. Efficiency-oriented MoE coding agent — verify pull size on device."
         },
         "devstral:24b": {
           "tier": "local_strong",
-          "role": ["implement_narrow", "agent_local"],
+          "role": [
+            "implement_narrow",
+            "agent_local"
+          ],
           "ram_gb": 14.0,
           "status": "current",
-          "strengths": ["swe_bench_agentic", "multi_file"],
-          "weaknesses": ["needs_~14gb"],
+          "strengths": [
+            "swe_bench_agentic",
+            "multi_file"
+          ],
+          "weaknesses": [
+            "needs_~14gb"
+          ],
           "notes": "Mistral Devstral agentic coder (SWE-bench open-source leader class). Alias pull: devstral."
         },
         "devstral": {
           "tier": "local_strong",
-          "role": ["implement_narrow", "agent_local"],
+          "role": [
+            "implement_narrow",
+            "agent_local"
+          ],
           "ram_gb": 14.0,
           "status": "current",
-          "strengths": ["swe_bench_agentic"],
-          "weaknesses": ["needs_~14gb"],
+          "strengths": [
+            "swe_bench_agentic"
+          ],
+          "weaknesses": [
+            "needs_~14gb"
+          ],
           "notes": "Latest tag → typically 24b class on Ollama."
         },
         "gpt-oss:20b": {
           "tier": "local_mid",
-          "role": ["implement_narrow", "scaffold", "reason_local"],
+          "role": [
+            "implement_narrow",
+            "scaffold",
+            "reason_local"
+          ],
           "ram_gb": 12.0,
           "status": "current",
-          "strengths": ["16gb_friendly", "open_weights"],
-          "weaknesses": ["not_specialist_coder"],
+          "strengths": [
+            "16gb_friendly",
+            "open_weights"
+          ],
+          "weaknesses": [
+            "not_specialist_coder"
+          ],
           "notes": "OpenAI open-weight MoE — solid 16GB-class general local when stronger coders do not fit."
         },
         "gemma4:12b": {
           "tier": "local_mid",
-          "role": ["implement_narrow", "docs", "reason_local"],
+          "role": [
+            "implement_narrow",
+            "docs",
+            "reason_local"
+          ],
           "ram_gb": 10.0,
           "status": "current",
-          "strengths": ["reasoning", "coding", "multimodal_local"],
+          "strengths": [
+            "reasoning",
+            "coding",
+            "multimodal_local"
+          ],
           "weaknesses": []
         },
         "qwen2.5-coder:14b": {
           "tier": "local_mid",
-          "role": ["implement_narrow", "bugfix_local", "scaffold"],
+          "role": [
+            "implement_narrow",
+            "bugfix_local",
+            "scaffold"
+          ],
           "ram_gb": 10.0,
           "status": "current",
-          "strengths": ["proven_coding", "user_measured"],
-          "weaknesses": ["older_than_qwen3"],
+          "strengths": [
+            "proven_coding",
+            "user_measured"
+          ],
+          "weaknesses": [
+            "older_than_qwen3"
+          ],
           "notes": "Still excellent mid ladder; widely installed (including this maintainer machine)."
         },
         "ornith:9b": {
           "tier": "local_mid",
-          "role": ["implement_narrow", "scaffold", "test"],
+          "role": [
+            "implement_narrow",
+            "scaffold",
+            "test"
+          ],
           "ram_gb": 6.0,
           "status": "current",
-          "strengths": ["agentic_coding"],
-          "weaknesses": ["weaker_than_30b"]
+          "strengths": [
+            "agentic_coding"
+          ],
+          "weaknesses": [
+            "weaker_than_30b"
+          ]
         },
         "qwen2.5-coder:7b": {
           "tier": "local_fast",
-          "role": ["boilerplate", "translate", "docstring", "format", "implement_narrow"],
+          "role": [
+            "boilerplate",
+            "translate",
+            "docstring",
+            "format",
+            "implement_narrow"
+          ],
           "ram_gb": 6.0,
           "status": "current",
-          "strengths": ["speed_16gb", "~26tok/s_measured"],
-          "weaknesses": ["shallow"]
+          "strengths": [
+            "speed_16gb",
+            "~26tok/s_measured"
+          ],
+          "weaknesses": [
+            "shallow"
+          ]
         },
         "qwen2.5-coder:3b": {
           "tier": "local_fast",
-          "role": ["boilerplate", "translate", "format"],
+          "role": [
+            "boilerplate",
+            "translate",
+            "format"
+          ],
           "ram_gb": 3.0,
           "status": "current",
-          "strengths": ["busy_16gb", "~52tok/s_measured"],
-          "weaknesses": ["very_shallow"]
+          "strengths": [
+            "busy_16gb",
+            "~52tok/s_measured"
+          ],
+          "weaknesses": [
+            "very_shallow"
+          ]
         },
         "qwen2.5-coder:1.5b": {
           "tier": "local_micro",
-          "role": ["format", "tiny_transform"],
+          "role": [
+            "format",
+            "tiny_transform"
+          ],
           "ram_gb": 1.8,
           "status": "current",
-          "strengths": ["fits_tight_ram"],
-          "weaknesses": ["minimal_quality"]
+          "strengths": [
+            "fits_tight_ram"
+          ],
+          "weaknesses": [
+            "minimal_quality"
+          ]
         },
         "deepcoder:1.5b": {
           "tier": "local_micro",
-          "role": ["format", "tiny_transform"],
+          "role": [
+            "format",
+            "tiny_transform"
+          ],
           "ram_gb": 1.5,
           "status": "current",
-          "strengths": ["tiny"],
-          "weaknesses": ["minimal_quality"]
+          "strengths": [
+            "tiny"
+          ],
+          "weaknesses": [
+            "minimal_quality"
+          ]
         }
       }
     }

@@ -258,7 +258,7 @@ Matrices live in:
 
 ```text
 $ effi route --compact "redesign distributed transaction architecture"
-domain=architecture … model=claude/claude-opus-4-8 cost=high
+domain=architecture … model=claude/claude-opus-5-5 cost=high
 
 $ effi route --compact "add rate limit middleware and unit tests"
 domain=implement … model=claude/claude-sonnet-5 cost=mid

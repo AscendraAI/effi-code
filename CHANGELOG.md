@@ -2,6 +2,19 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Changed — model catalog refreshed (2026-10-03, was two months overdue)
+- Claude: **Opus 5.5** ($4/$20, replaces Opus 4.8) · **Fable 5.1** (replaces
+  Fable 5) · Sonnet 5 price corrected to $2/$10 (was $3/$15).
+- OpenAI/Codex: **GPT-6 Astra** (top, $10/$50) · **GPT-6.1 Sol** (mid, $2/$10)
+  · **GPT-6 Luna** (cheap, $0.10/$0.50) replace GPT-5.6 Sol/Terra/Luna.
+- Gemini: **3.8 Flash** ($0.75/$3.75 intro, $1.50/$7.50 from 2027) replaces
+  3.5 Flash; 3.1 Pro preview and 3.1 Flash-Lite prices filled in.
+- Grok: **4.7** replaces 4.5 as top.
+- How: gathered by Grok through `effi delegate` (live search), then every id
+  and price checked against the official pricing/model pages before writing —
+  all matched. Claude values from Anthropic's model reference. Superseded ids
+  stay as `status: previous` so past usage still prices. Next review 2026-10-17.
+
 ### Added — `effi delegate`: the bridge from Claude to Codex · Gemini · Grok · local (2026-10-03)
 Claude Code's own orchestration only drives Claude models. `effi delegate
 "<task>"` hands one task to another provider's official CLI and returns paths

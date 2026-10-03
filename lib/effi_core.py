@@ -620,7 +620,7 @@ def apply_mode_policy(rec: dict, mode: Optional[dict] = None, cfg: Optional[dict
                 why_extra.append("Apex: cloud over local for bulk")
             else:
                 rec["primary_provider"] = pol.get("default_coding_provider", "claude")
-                rec["primary_model"] = pol.get("default_coding_model", "claude-opus-4-8")
+                rec["primary_model"] = pol.get("default_coding_model", "claude-opus-5-5")
                 why_extra.append("Apex: top coding model")
         if pol.get("prefer_top_for_coding") and domain in (
             "implement",
@@ -637,11 +637,11 @@ def apply_mode_policy(rec: dict, mode: Optional[dict] = None, cfg: Optional[dict
         ):
             if domain in ("architecture", "plan", "security", "implement_hard", "orchestrate"):
                 rec["primary_provider"] = "claude"
-                rec["primary_model"] = pol.get("architecture_model", "claude-opus-4-8")
+                rec["primary_model"] = pol.get("architecture_model", "claude-opus-5-5")
             elif domain != "design":  # design may stay gemini
                 if rec.get("primary_provider") in ("claude", "openai", "grok", "local"):
                     rec["primary_provider"] = pol.get("default_coding_provider", "claude")
-                    rec["primary_model"] = pol.get("default_coding_model", "claude-opus-4-8")
+                    rec["primary_model"] = pol.get("default_coding_model", "claude-opus-5-5")
             why_extra.append("Apex: performance-first routing")
         # floor review
         min_rev = pol.get("min_review") or "clean_context"
@@ -754,7 +754,7 @@ def load_config() -> dict:
         "prefer_providers": ["claude", "openai", "gemini", "grok", "local"],
         "main_thread_provider": "claude",
         "main_thread_model": "claude-sonnet-5",
-        "escalate_model": "claude-opus-4-8",
+        "escalate_model": "claude-opus-5-5",
         "catalog_auto_remind_days": 14,
         "local": {
             "enabled": True,

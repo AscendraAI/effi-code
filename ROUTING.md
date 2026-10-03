@@ -17,9 +17,9 @@
 
 | Provider | Top | Mid (기본 코딩) | Cheap / Bulk |
 |---|---|---|---|
-| **Claude** | Opus 4.8 / Fable 5 | Sonnet 5 | Haiku 4.5 |
-| **OpenAI (Codex)** | GPT-5.6 Sol | GPT-5.6 Terra | GPT-5.6 Luna |
-| **Gemini** | 3.1 Pro | 3.5 Flash | 3.1 Flash-Lite |
+| **Claude** | Opus 5.5 / Fable 5.1 | Sonnet 5 | Haiku 4.5 |
+| **OpenAI (Codex)** | GPT-6 Astra | GPT-6.1 Sol | GPT-6 Luna |
+| **Gemini** | 3.1 Pro | 3.8 Flash | 3.1 Flash-Lite |
 | **Grok** | 4.5 | 4.3 / Build 0.1 | — |
 | **Local** | qwen3-coder:30b / devstral | ornith:9b / gemma4:12b | qwen2.5-coder 7b→1.5b |
 
@@ -35,7 +35,7 @@
 | research (+ realtime) | Gemini Pro or Grok+search | 병렬 읽기 OK |
 | review (clean ctx) | Sonnet; 보안은 Opus | 생성 컨텍스트 분리 |
 | bulk / translate / docstring | **Local auto** | 공짜; 검증 필수 |
-| implement_hard / debug hard | Opus or GPT Sol or Grok 4.5 | 실패 시만 |
+| implement_hard / debug hard | Opus or GPT-6 Astra or Grok 4.7 | 실패 시만 |
 
 ## 캐스케이드
 

@@ -12,9 +12,9 @@
       "policy": {
         "allow_local_primary": false,
         "prefer_top_for_coding": true,
-        "default_coding_model": "claude-opus-4-8",
+        "default_coding_model": "claude-opus-5-5",
         "default_coding_provider": "claude",
-        "architecture_model": "claude-opus-4-8",
+        "architecture_model": "claude-opus-5-5",
         "bulk_cloud_model": "claude-sonnet-5",
         "bulk_cloud_provider": "claude",
         "min_review": "clean_context",

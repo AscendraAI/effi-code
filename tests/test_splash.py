@@ -100,7 +100,7 @@ class WordmarkTests(unittest.TestCase):
 class HeadlineModelTests(unittest.TestCase):
     def test_apex_leads_with_its_pinned_top_model(self):
         h = mode_headline_model(ec.get_mode("apex"))
-        self.assertEqual(h["model"], "claude-opus-4-8")
+        self.assertEqual(h["model"], "claude-opus-5-5")
         self.assertEqual(h["prefix"], "")
 
     def test_cruise_falls_back_to_routing_implement_primary(self):

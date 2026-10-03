@@ -256,7 +256,7 @@ TRIAGE → PLAN → DO → VERIFY → SHIP
 
 ```text
 $ effi route --compact "분산 트랜잭션 아키텍처 재설계"
-domain=architecture … model=claude/claude-opus-4-8 cost=high
+domain=architecture … model=claude/claude-opus-5-5 cost=high
 
 $ effi route --compact "레이트리밋 미들웨어와 단위 테스트 추가"
 domain=implement … model=claude/claude-sonnet-5 cost=mid

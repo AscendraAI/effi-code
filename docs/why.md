@@ -10,10 +10,10 @@
 ### 프로바이더 강점 (공식 문서 2026-07)
 | | 강점 | 카탈로그 1순위 예 |
 |---|---|---|
-| **Claude** Opus 4.8 / Sonnet 5 / Haiku 4.5 | 에이전트 코딩·판단 / 밸런스 / 저가 | orchestrate, implement, bulk-cloud |
-| **OpenAI** GPT-5.6 Sol/Terra/Luna | 전문 추론·코딩 티어 분리 | hard implement, mid, bulk API |
-| **Gemini** 3.1 Pro / 3.5 Flash / Flash-Lite | 멀티모달·에이전틱·가성비 | design, research, cheap |
-| **Grok** 4.5 / 4.3 / Build | 속도·코딩·검색 툴, 가성비 top | research realtime, implement value |
+| **Claude** Opus 5.5 / Fable 5.1 / Sonnet 5 / Haiku 4.5 | 에이전트 코딩·판단 / 밸런스 / 저가 | orchestrate, implement, bulk-cloud |
+| **OpenAI** GPT-6 Astra / GPT-6.1 Sol / GPT-6 Luna | 전문 추론·코딩 티어 분리 | hard implement, mid, bulk API |
+| **Gemini** 3.1 Pro / 3.8 Flash / Flash-Lite | 멀티모달·에이전틱·가성비 | design, research, cheap |
+| **Grok** 4.7 / 4.3 / Build | 속도·코딩·검색 툴, 가성비 top | research realtime, implement value |
 | **Local** Ollama coding | 공짜·프라이버시·기계 작업 | bulk, quota backstop |
 
 출처:
