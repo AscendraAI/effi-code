@@ -2,6 +2,15 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Fixed — worktrees lost the project mode pin (2026-10-03)
+`.effi/mode` is untracked, so every linked git worktree — Orca workers and
+`claude -w` alike — fell back to the global mode (measured: main tree Apex,
+all three probe workers Cruise). A linked worktree now inherits the main
+checkout's pin; `effi mode clear` inside a worktree writes `none` so it stays
+off instead of snapping back. Found by the H4 probe; the fix was reviewed by
+Codex (read-only), which caught four more issues (paths with spaces, git
+< 2.31, submodules/bare repos, re-inherit after clear) — all fixed and tested.
+
 ### Added — `effi trust`: what third-party code your Claude Code runs, and what changed (2026-10-03)
 `scan` (read-only) · `list` · `accept`. Inventories MCP servers (user, local and
 project scope), marketplaces, plugins and the hook events they register,

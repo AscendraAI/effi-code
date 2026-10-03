@@ -106,13 +106,50 @@ def project_mode_path(project: Optional[Path] = None) -> Path:
     return project_effi_dir(project) / "mode"
 
 
+NO_INHERIT = "none"  # a worktree's .effi/mode with this value opts out of inheriting
+
+
+def _main_worktree_root(project: Path) -> Optional[Path]:
+    """The main checkout when `project` is a linked git worktree, else None.
+
+    Uses `git worktree list --porcelain` (first entry = main; skipped when
+    bare) rather than guessing from the common dir's name — that guess broke
+    for submodules and separate git dirs. Paths are taken line by line, so
+    spaces survive. Works on git versions without --path-format."""
+    def git(*a):
+        return subprocess.run(["git", "-C", str(project), *a], capture_output=True,
+                              text=True, timeout=5)
+    try:
+        dirs = git("rev-parse", "--git-dir", "--git-common-dir")
+        if dirs.returncode != 0:
+            return None
+        gd, cd = (dirs.stdout.splitlines() + ["", ""])[:2]
+        if not gd or not cd or (Path(project) / gd).resolve() == (Path(project) / cd).resolve():
+            return None  # not a linked worktree
+        wl = git("worktree", "list", "--porcelain")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if wl.returncode != 0:
+        return None
+    first = wl.stdout.split("\n\n", 1)[0].splitlines()
+    if not first or not first[0].startswith("worktree ") or "bare" in first[1:]:
+        return None
+    return Path(first[0][len("worktree "):])
+
+
 def read_project_mode(project: Optional[Path] = None) -> Optional[str]:
-    path = project_mode_path(project)
+    root = project or project_root()
+    path = project_mode_path(root)
     if not path.is_file():
         # legacy single-file marker
-        legacy = (project or project_root()) / ".effi-mode"
+        legacy = root / ".effi-mode"
+        main = _main_worktree_root(root)
         if legacy.is_file():
             path = legacy
+        elif main and project_mode_path(main).is_file():
+            # .effi/mode is untracked, so a linked worktree (Orca worker,
+            # `claude -w`) doesn't have it — inherit the main checkout's pin
+            path = project_mode_path(main)
         else:
             return None
     try:
@@ -121,6 +158,8 @@ def read_project_mode(project: Optional[Path] = None) -> Optional[str]:
             return None
         # allow "apex" or "mode: apex"
         line = raw[0].strip()
+        if line.lower() == NO_INHERIT:
+            return None
         if ":" in line and not line.startswith("apex") and line.split(":")[0].lower() in (
             "mode",
             "id",
@@ -278,6 +317,13 @@ def clear_mode(scope: str = "project") -> dict:
         if p.is_file():
             p.unlink()
             removed.append(str(p))
+        main = _main_worktree_root(proj)
+        if main and project_mode_path(main).is_file():
+            # a linked worktree would silently re-inherit the main checkout's
+            # pin; clearing here means "not pinned in this worktree"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(NO_INHERIT + "\n", encoding="utf-8")
+            removed.append(f"{p} (inherit from {main} turned off)")
         legacy = proj / ".effi-mode"
         if legacy.is_file():
             legacy.unlink()

@@ -280,5 +280,59 @@ class LocalDriverCheckTests(unittest.TestCase):
         self.assertNotIn("워커 전용", r["reason"])
 
 
+class WorktreeModeTests(unittest.TestCase):
+    """Regression (H4, 2026-10-03): `.effi/mode` is untracked, so every git
+    worktree — Orca workers and `claude -w` alike — silently fell back to the
+    global mode (main tree Apex → workers Cruise).
+    Break it: drop the main-worktree fallback in read_project_mode → red."""
+
+    def test_worktree_inherits_main_tree_pin(self):
+        import subprocess
+        main = Path(tempfile.mkdtemp(prefix="effi-wt-main-"))
+        run = lambda *a, cwd=main: subprocess.run(a, cwd=cwd, check=True, capture_output=True)
+        run("git", "init", "-q")
+        (main / "f.txt").write_text("x\n")
+        run("git", "add", "f.txt")
+        run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
+        (main / ".effi").mkdir()
+        (main / ".effi/mode").write_text("apex\n")
+        wt = main.parent / (main.name + "-wt")
+        run("git", "worktree", "add", "-q", str(wt))
+        self.assertFalse((wt / ".effi/mode").exists())
+        from effi_core import read_project_mode
+        self.assertEqual(read_project_mode(wt), "apex")
+        # a worktree's own pin still wins
+        (wt / ".effi").mkdir()
+        (wt / ".effi/mode").write_text("sip\n")
+        self.assertEqual(read_project_mode(wt), "sip")
+        # Codex review: clearing in a worktree must not snap back to the main pin
+        (wt / ".effi/mode").write_text("none\n")
+        self.assertIsNone(read_project_mode(wt))
+
+    def test_paths_with_spaces(self):
+        import subprocess
+        base = Path(tempfile.mkdtemp(prefix="effi wt spaces "))
+        main = base / "main repo"
+        main.mkdir()
+        run = lambda *a: subprocess.run(a, cwd=main, check=True, capture_output=True)
+        run("git", "init", "-q")
+        (main / "f").write_text("x")
+        run("git", "add", "f")
+        run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i")
+        (main / ".effi").mkdir()
+        (main / ".effi/mode").write_text("sip\n")
+        wt = base / "linked tree"
+        run("git", "worktree", "add", "-q", "-b", "linked", str(wt))
+        from effi_core import read_project_mode
+        self.assertEqual(read_project_mode(wt), "sip")
+
+    def test_plain_repo_is_not_a_worktree(self):
+        import subprocess
+        from effi_core import _main_worktree_root
+        d = Path(tempfile.mkdtemp())
+        subprocess.run(["git", "init", "-q"], cwd=d, check=True)
+        self.assertIsNone(_main_worktree_root(d))
+
+
 if __name__ == "__main__":
     unittest.main()
