@@ -284,12 +284,12 @@ effi edit path.py "add type hints"          # rewrite → path.py.effi-new + dif
 effi edit --apply-only path.py              # accept after review
 ```
 
-**Optional — multi-account / API rotation** (when you *do* have keys or isolated OAuth profiles):
+**Optional — multi-account / API rotation** (API keys only — subscription OAuth profiles are never rotated automatically; pick one with `effi accounts select --id <id>`):
 
 ```sh
 effi accounts init
 effi accounts threshold 80
-# either: api_key_env exports  OR  oauth_profile config_dir per account
+# api_key_env exports per account (rotated)  ·  oauth_profile = manual only
 effi accounts meter work-primary 72
 effi                             # pick account under threshold
 ```

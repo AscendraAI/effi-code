@@ -5,7 +5,7 @@
   "notes": [
     "Store API keys here OR set env_var names that resolve at runtime.",
     "Do NOT commit real keys. File mode should be 600.",
-    "Subscription OAuth: use isolated config_dir per account (Claude Code profile isolation).",
+    "Subscription OAuth profiles (type oauth_profile) are never rotated automatically — select one explicitly with `effi accounts select --id <id>`. Rotation is for API keys only.",
     "usage_percent is user-maintained (or set via `effi accounts meter`). Auto APIs vary by plan."
   ],
   "accounts": [

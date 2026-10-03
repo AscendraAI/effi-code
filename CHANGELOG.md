@@ -2,6 +2,15 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Changed — subscription OAuth profiles are no longer rotated (2026-10-03)
+Automatic threshold rotation (`effi accounts select` without an id, `meter`,
+`env`, `apply`, `effi`) now moves between **API-key accounts only**. An
+`oauth_profile` is used only when you name it: `effi accounts select --id <id>`.
+Cycling several Claude subscriptions to get past usage limits is the pattern
+Anthropic's terms bar for third-party tools, and effi is heading for a public,
+commercial release. If every enabled account is a profile, automatic selection
+returns `no_rotatable_accounts` instead of picking one. Tests: `tests/test_accounts.py`.
+
 ### Fixed — CI red since v4.7.1: launch line and resume screen (2026-10-03)
 - **Resume/compact showed the whole onboarding intro** in any project without
   `.effi/mode` — the one-line promise only held on machines with a mode pin,

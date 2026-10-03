@@ -282,12 +282,12 @@ effi edit path.py "타입 힌트 추가"      # 재작성 → path.py.effi-new +
 effi edit --apply-only path.py          # 검토 후 수락
 ```
 
-**선택 — 다중 계정 / API 로테이션** (키가 있거나 프로필을 나눌 때만):
+**선택 — 다중 계정 / API 로테이션** (API 키만 자동 로테이션 — 구독 OAuth 프로필은 자동으로 돌리지 않고 `effi accounts select --id <id>`로만 고른다):
 
 ```sh
 effi accounts init
 effi accounts threshold 80
-# api_key_env 내보내기  또는  계정별 oauth_profile config_dir
+# 계정별 api_key_env 내보내기 (로테이션)  ·  oauth_profile = 수동 선택만
 effi accounts meter work-primary 72
 effi                             # 임계 미만 계정 선택
 ```

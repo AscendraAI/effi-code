@@ -1334,6 +1334,20 @@ def select_account(force_id: Optional[str] = None) -> dict:
             "hint": f"Copy config/accounts.example.json → {DEFAULT_ACCOUNTS}",
         }
 
+    # Automatic rotation moves between API keys only. Cycling subscription
+    # logins to get past usage limits is what Anthropic's terms bar for
+    # third-party tools; a profile is used only when named (force_id above).
+    accounts = [a for a in accounts if a.get("type") != "oauth_profile"]
+    if not accounts:
+        return {
+            "account": None,
+            "switched": False,
+            "threshold": thr,
+            "reason": "no_rotatable_accounts",
+            "hint": "subscription profiles are not rotated — `effi accounts select --id <id>`, "
+                    "or add api_key accounts for rotation",
+        }
+
     # Apex: always highest-priority account (quota is not the gate)
     if ignore_thr:
         a = accounts[0]

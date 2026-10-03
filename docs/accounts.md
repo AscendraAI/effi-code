@@ -77,7 +77,14 @@ Claude Code OAuth lives in a config dir. Isolate one profile per account:
 ```
 
 1. Log in once with that profile (copy or create the Claude config under `config_dir`).
-2. When selected, effi sets `CLAUDE_CONFIG_DIR` to that path.
+2. Select it **explicitly**: `effi accounts select --id personal-sub` — effi sets `CLAUDE_CONFIG_DIR` to that path.
+
+**Profiles are never rotated automatically.** Threshold rotation (`select` with no id,
+`meter`, `env`, `apply`) only moves between `api_key` accounts. Cycling several
+subscription logins to get past usage limits is what Anthropic's terms bar for
+third-party tools, so effi leaves that choice to you, one named login at a time.
+If every enabled account is a profile, automatic selection returns
+`no_rotatable_accounts`.
 
 Do **not** put subscription OAuth tokens into third-party routers/proxies (Anthropic ToS).
 
