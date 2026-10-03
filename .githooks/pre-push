@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# pre-push — 푸시 전에 verify --fast (약 3초).
+#   (picknow-ops .githooks/pre-push에서 가져왔다)
+#
+# 활성화(저장소마다 한 번):  git config core.hooksPath .githooks
+#
+# 왜 있나: v4.7.1(2026-07-26)부터 CI가 빨간불인데 두 달 동안 아무도 몰랐다.
+#   CI는 푸시 **뒤에** 말하고, 아무도 안 보면 없는 것과 같다. 푸시 **앞**에서 막는다.
+#
+# pre-commit이 아니라 pre-push인 이유: 커밋마다 막으면 사람이 --no-verify를 배운다.
+#
+# 우회: SKIP_VERIFY=1 git push …  — 우회했으면 커밋 메시지나 CHANGELOG에 이유를 남긴다.
+#   우회가 기록되지 않으면 그 관문은 없는 것과 같다.
+
+if [ "$SKIP_VERIFY" = "1" ]; then
+  echo "⚠️  verify를 건너뛴다 (SKIP_VERIFY=1) — 이유를 남길 것"
+  exit 0
+fi
+
+# git이 stdin으로 ref 목록을 준다. 안 쓰지만 verify가 먹지 않게 비운다.
+[ -t 0 ] || cat >/dev/null
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -f "$root/scripts/verify.sh" ] || exit 0
+
+bash "$root/scripts/verify.sh" --fast
+code=$?
+
+if [ $code -eq 2 ]; then
+  echo ""
+  echo "⛔ verify가 판정을 못 했다 — 이것은 통과가 아니다. 위의 ⛔ 줄을 볼 것."
+  echo "   정말 건너뛰려면: SKIP_VERIFY=1 git push …"
+  exit 1
+fi
+if [ $code -ne 0 ]; then
+  echo ""
+  echo "❌ verify가 막았다. 위의 ❌ 줄을 고치고 다시 민다."
+  exit 1
+fi
+exit 0

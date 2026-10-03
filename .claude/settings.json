@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git add -A *)",
+      "Bash(git add --all *)",
+      "Bash(git commit -a *)",
+      "Bash(git commit -am *)",
+      "Read(./config/accounts.json)",
+      "Read(./.env)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check-edited.sh\"",
+            "timeout": 15,
+            "statusMessage": "고친 파일 문법 확인…"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-verify.sh\"",
+            "timeout": 120,
+            "statusMessage": "verify --fast…"
+          }
+        ]
+      }
+    ]
+  }
+}

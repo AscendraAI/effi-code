@@ -347,10 +347,32 @@ class HookChannelTests(unittest.TestCase):
         self.assertNotIn("[effi:action]", out["systemMessage"])
         self.assertIn("effi-code —", out["systemMessage"])   # intro is for the user
 
+    def test_resume_stays_one_line_before_onboarding(self):
+        """Regression: a project with no `.effi/mode` got the whole intro +
+        connect guide appended on every resume/compact. Machines with a pin
+        never saw it, so it shipped red (v4.7.1).
+        Break it: drop the `full` guard on the onboarding block → 12 lines."""
+        with mock.patch.object(ec, "project_mode_is_set", lambda *a, **k: False):
+            for src in ("resume", "compact"):
+                out = ec.hook_session_start_output(source=src)
+                self.assertEqual(len(out["systemMessage"].strip().split("\n")), 1, src)
+                # the model still learns onboarding is pending
+                self.assertIn("[effi:action]", out["hookSpecificOutput"]["additionalContext"])
+
     def test_splash_line_is_short_and_actionable(self):
         line = ec.splash_line(splash_data(tip_index=0))
         self.assertLess(_dwidth(line), 110)
         self.assertIn("effi · ", line)
+
+    def test_splash_line_stays_short_whatever_the_warning(self):
+        """Regression: warnings were appended uncapped, so the line grew past
+        110 the day the catalog review date lapsed — a date-triggered failure.
+        Break it: remove the trim in splash_line → width > 110."""
+        d = splash_data(tip_index=0)
+        d["warnings"] = ["카탈로그 재검토 기한 지남 — " + "아주 긴 경고 " * 20]
+        line = ec.splash_line(d)
+        self.assertLess(_dwidth(line), 110)
+        self.assertIn("⚠", line)
 
 
 class SessionStartHookCliTests(unittest.TestCase):

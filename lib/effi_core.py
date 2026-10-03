@@ -2549,8 +2549,13 @@ def splash_line(d: dict) -> str:
             f"{c['connected']}/{c['providers']} providers"]
     line = "effi · " + " · ".join(b for b in bits if b)
     if d.get("warnings"):
-        line += f"   ⚠ {d['warnings'][0]}"
+        # trimmed: warnings come from dates and probes, so an uncapped one
+        # breaks the one-line promise on whatever day it first appears
+        line = _dtrim(line + f"   ⚠ {d['warnings'][0]}", SPLASH_LINE_MAX)
     return line
+
+
+SPLASH_LINE_MAX = 100
 
 
 # Sources that re-enter an existing conversation: the user already saw the
@@ -2590,9 +2595,11 @@ def hook_session_start_output(
     context = [format_preflight(rep)]
 
     if not onboarded:
-        # intro + how to connect anything missing → the user;
-        # the action block (addressed to the assistant) → the model
-        shown.append(format_connect(rep, intro=True, action=False, table=False))
+        # intro + how to connect anything missing → the user, but only on a
+        # fresh start — resume/compact promise one line;
+        # the action block (addressed to the assistant) → the model, always
+        if full:
+            shown.append(format_connect(rep, intro=True, action=False, table=False))
         context.append(onboarding_action())
 
     return {

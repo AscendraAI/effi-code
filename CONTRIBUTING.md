@@ -6,9 +6,15 @@
 git clone https://github.com/AscendraAI/effi-code && cd effi-code
 export PATH="$PWD/bin:$PATH"
 export PYTHONPATH="$PWD/lib"
-python3 -m unittest discover -s tests -v
+git config core.hooksPath .githooks   # pre-push runs verify --fast
+bash scripts/verify.sh                 # 0 pass · 1 found (❌) · 2 cannot judge (⛔ — not a pass)
 effi doctor
 ```
+
+`scripts/verify.sh` is the single completion check — CI runs the same script.
+Tests run in a clean copy with an empty `HOME`, so your own `.effi/mode` or
+`~/.config/effi` can't make local results differ from CI. Fixed a bug? Run
+`/lesson` in Claude Code to turn it into a check instead of a prose rule.
 
 ## What to change where
 
@@ -48,7 +54,7 @@ Do **not** invent model IDs. Prefer primary docs:
 
 ## PR checklist
 
-- [ ] Tests pass  
+- [ ] `bash scripts/verify.sh` passes  
 - [ ] `effi route` still maps architecture→opus, bulk→local, design→gemini  
 - [ ] Docs / CHANGELOG / VERSION updated if user-facing  
 - [ ] No secrets (`accounts.json` stays local under `~/.config/effi/`)  

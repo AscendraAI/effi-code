@@ -30,4 +30,8 @@ __pycache__/
 
 # bkit 플러그인 상태 (공개 안 함)
 .bkit/
-.claude/
+# Claude Code — 프로젝트 설정·훅·스킬만 공개, 나머지(agent-memory 등)는 로컬
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/skills/

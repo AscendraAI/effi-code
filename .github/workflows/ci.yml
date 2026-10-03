@@ -14,20 +14,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Unit tests (routing)
-        run: python3 -m unittest discover -s tests -v
-      - name: CLI help smoke
-        run: |
-          chmod +x bin/*
-          export PATH="$PWD/bin:$PATH"
-          export PYTHONPATH="$PWD/lib"
-          effi help
-          effi route --compact "add rate limit middleware and unit tests"
-          effi route --compact "40 UI strings translate"
-          effi catalog status
-          effi splash --width 100 --no-color | grep -q "effi-code v"
-          effi splash --json | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['providers']"
-          echo '{"source":"startup"}' | bin/effi-hook-session-start \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'effi-code v' in d['systemMessage']; assert 'effi preflight' in d['hookSpecificOutput']['additionalContext']"
-          effi-edit --help
-          effi doctor --json | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'version' in d"
+      - name: verify (syntax · unit · consistency · CLI smoke)
+        # Same script as the local pre-push hook — local green must mean CI green.
+        run: bash scripts/verify.sh

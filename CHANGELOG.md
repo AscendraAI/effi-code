@@ -2,6 +2,17 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Fixed — CI red since v4.7.1: launch line and resume screen (2026-10-03)
+- **Resume/compact showed the whole onboarding intro** in any project without
+  `.effi/mode` — the one-line promise only held on machines with a mode pin,
+  which is why it passed locally and failed in CI.
+- **The one-line status had no width cap on its warning**, so it outgrew 110
+  columns the day the catalog review date lapsed. It is now trimmed to 100.
+- New dev harness (ported from picknow-ops): `scripts/verify.sh` (0 pass ·
+  1 found · 2 cannot judge) runs tests in a clean copy with an empty `HOME`,
+  so local results match CI; `.githooks/pre-push`; project Claude Code hooks
+  (syntax check on edit, opt-in verify on Stop); `/lesson`. CI runs the same script.
+
 ### Fixed — Gemini, after two wrong premises in a row
 Both earlier stories about Gemini were wrong, in opposite directions:
 
