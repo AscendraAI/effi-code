@@ -116,6 +116,8 @@ if [ $FAST -eq 0 ]; then
   smoke "splash --json" 'effi splash --json | python3 -c "import sys,json; assert json.load(sys.stdin)[\"providers\"]"'
   smoke "session-start hook" "echo '{\"source\":\"startup\"}' | bin/effi-hook-session-start | python3 -c \"import sys,json; d=json.load(sys.stdin); assert 'effi-code v' in d['systemMessage']; assert 'effi preflight' in d['hookSpecificOutput']['additionalContext']\""
   smoke "edit --help" 'effi-edit --help >/dev/null'
+  smoke "harness scan --json" 'effi harness scan --json . | python3 -c "import sys,json; assert json.load(sys.stdin)[\"steps\"]"'
+  smoke "harness plan" 'effi harness plan . | grep -q "scripts/verify.sh"'
   smoke "doctor --json" 'effi doctor --json | python3 -c "import sys,json; assert \"version\" in json.load(sys.stdin)"'
 fi
 

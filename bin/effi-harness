@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# effi-harness — verification floor for any repo: scan → plan → apply (approved) → prove
+#
+#   effi harness [scan] [path]        what the project has, what the floor would be (writes nothing)
+#   effi harness plan [path]          files that would be written, and how (create / same / sidecar)
+#   effi harness show <file> [path]   print one planned file
+#   effi harness apply [path] [--arm] write them — never overwrites (differing file → *.effi-new);
+#                                     --arm also sets core.hooksPath=.githooks
+#   effi harness prove [path]         break a temp copy on purpose; the floor must notice
+#   --json                            machine-readable (scan, plan, prove)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+
+case "${1:-scan}" in
+  -h|--help|help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+exec python3 - "$@" <<'PY'
+import json, sys
+from pathlib import Path
+import effi_harness as h
+
+args = [a for a in sys.argv[1:]]
+as_json = "--json" in args
+arm = "--arm" in args
+args = [a for a in args if a not in ("--json", "--arm")]
+cmd = args.pop(0) if args and args[0] in ("scan", "plan", "show", "apply", "prove") else "scan"
+show_file = args.pop(0) if cmd == "show" and args else None
+root = Path(args[0] if args else ".").resolve()
+
+try:
+    rep = h.scan(root)
+except ValueError as e:
+    print(f"⛔ {e}", file=sys.stderr); sys.exit(2)
+
+STEP_LABEL = {
+    "shell_syntax": "shell syntax", "python_syntax": "python syntax", "unittest": "unittest",
+    "pytest": "pytest", "selftest": "module --selftest", "npm": "npm run", "tsc": "tsc --noEmit",
+    "context_cap": "CLAUDE.md / AGENTS.md length cap",
+}
+
+def step_line(s):
+    lab = STEP_LABEL[s["id"]]
+    if s["id"] == "npm":
+        lab = f"{s['dir']}: npm run {s['script']}"
+    elif s["id"] == "tsc":
+        lab = f"{s['dir']}: tsc --noEmit"
+    extra = f" ({s['count']})" if s.get("count") else ""
+    return f"  {'fast' if s['fast'] else 'full'}  {lab}{extra}"
+
+if cmd == "scan":
+    if as_json:
+        print(json.dumps(rep, ensure_ascii=False, indent=2)); sys.exit(0)
+    print(f"effi harness · {rep['root']}\n")
+    print("Verification floor (scripts/verify.sh would run):")
+    for s in rep["steps"]:
+        print(step_line(s))
+    if not rep["steps"]:
+        print("  (nothing detected — verify would have nothing to judge)")
+    print("\nFindings:")
+    for kind, msg in rep["findings"] or [("ok", "nothing missing")]:
+        print(f"  [{kind}] {msg}")
+    print("\nNext: effi harness plan   (writes nothing)")
+    sys.exit(0)
+
+items = h.plan(root, rep)
+
+if cmd == "plan":
+    if as_json:
+        print(json.dumps([{k: v for k, v in i.items() if k != "content"} for i in items], indent=2))
+        sys.exit(0)
+    print(f"effi harness plan · {root}\n")
+    for i in items:
+        note = {"create": "create", "same": "already identical — skip",
+                "sidecar": f"exists and differs → {i['path']}.effi-new (yours untouched)"}[i["action"]]
+        print(f"  {i['path']:<34} {note}")
+    print("\nInspect:  effi harness show scripts/verify.sh")
+    print("Write:    effi harness apply [--arm]     (--arm turns on the pre-push gate)")
+    print("Domain hooks/skills: ask Claude Code's claude-code-setup plugin — effi builds the floor only.")
+    sys.exit(0)
+
+if cmd == "show":
+    for i in items:
+        if i["path"] == show_file:
+            sys.stdout.write(i["content"]); sys.exit(0)
+    print(f"not in plan: {show_file}", file=sys.stderr); sys.exit(1)
+
+if cmd == "apply":
+    r = h.apply(root, items, arm=arm)
+    for w in r["written"]:
+        print(f"  wrote {w}")
+    if not r["written"]:
+        print("  nothing to write — already in place")
+    if r["armed"] is True:
+        print("  armed: core.hooksPath=.githooks (pre-push runs verify --fast)")
+    elif r["armed"] is False:
+        print(f"  NOT armed: {r['why']}")
+        print("  → merge .githooks/pre-push into your hook setup, then: git config core.hooksPath .githooks")
+    else:
+        print("  pre-push not armed yet:  git config core.hooksPath .githooks   (or apply --arm)")
+    if any(w.endswith(".effi-new") for w in r["written"]):
+        print("  review the *.effi-new files and merge what you want")
+    print("\nNext: effi harness prove")
+    sys.exit(0)
+
+if cmd == "prove":
+    res = h.prove(root)
+    if as_json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+    else:
+        print(f"effi harness prove · {root}\n")
+        for c in res:
+            print(f"  {'✅' if c['ok'] else '❌'} {c['name']:<52} expect {c['expect']} · got {c['got']}")
+    sys.exit(0 if all(c["ok"] for c in res) else 1)
+PY

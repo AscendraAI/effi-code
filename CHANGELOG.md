@@ -2,6 +2,31 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Added — `effi harness`: a verification floor for any repo (2026-10-03)
+`scan` → `plan`/`show` → `apply [--arm]` → `prove`. Generates one
+`scripts/verify.sh` (0 pass · 1 found · 2 cannot judge — a step that counted
+nothing is never a pass), a pre-push gate, an edit-time syntax hook, an opt-in
+Stop verify and deny rules. Detects python (syntax · unittest per test dir ·
+pytest · `--selftest` modules), shell, node (lint · typecheck · test · tsc) and
+caps CLAUDE.md/AGENTS.md at 150 lines; a stack it can't check yields ⛔, not ✅.
+- **Writes only on `apply`, never overwrites** — a differing file gets `*.effi-new`.
+  `--arm` refuses when `core.hooksPath` points elsewhere or `.git/hooks` has live hooks.
+- **`prove` breaks a temp copy on purpose** (syntax error, failing test or
+  selftest, missing interpreter) and passes only when verify names *that* file
+  — a fault in an already-red tree is not a proof. The real tree is never touched.
+- First real install: picknow-homepage (Next.js) — verify 3.5 s, `prove` 4/4
+  including an injected TypeScript type error (the temp copy links the real
+  `node_modules`, since it is gitignored).
+- `scan` also flags unpinned MCP servers (`@latest`), oversized context files
+  and a gitignored `.claude/`.
+- Why a floor and not recommendations: Anthropic's `claude-code-setup` already
+  recommends project-specific skills well; measured against picknow-ops it
+  missed the judging floor (docs/01-plan/v5-direction.md §6.2).
+- A clean-context review found 8 false-pass paths before release (empty floor,
+  non-ASCII paths, one test dir only, subdirectory arming, substring proofs,
+  disarmed `.git/hooks`, string-mention selftests, zsh as bash); each has a
+  regression test in `tests/test_harness.py` (25 tests).
+
 ### Changed — subscription OAuth profiles are no longer rotated (2026-10-03)
 Automatic threshold rotation (`effi accounts select` without an id, `meter`,
 `env`, `apply`, `effi`) now moves between **API-key accounts only**. An
