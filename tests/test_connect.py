@@ -214,3 +214,23 @@ class FormatConnectTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class GeminiCoveredByAntigravityTests(unittest.TestCase):
+    """Decision 2026-10-04: Gemini by subscription only (Antigravity), no API key.
+    When agy is connected, the session screen must stop asking for a Gemini key."""
+
+    def test_covered_gemini_is_not_a_todo(self):
+        import effi_core as ec
+        from unittest import mock
+        fake = {"providers": [
+            {"id": "gemini", "connection": "partial", "detail": "oauth 폐기 → 키 필요"},
+            {"id": "antigravity", "connection": "connected", "detail": "cli:agy"}]}
+        with mock.patch.object(ec, "preflight", lambda probe=False: {k: [dict(x) for x in v] for k, v in fake.items()}), \
+             mock.patch.object(ec, "connect_hint", lambda pid, spec: {"login": "x"}), \
+             mock.patch.object(ec, "connect_command", lambda pid, spec: {"available": False}):
+            rep = ec.connect_report()
+        self.assertNotIn("gemini", rep["partial"])
+        gem = [p for p in rep["providers"] if p["id"] == "gemini"][0]
+        self.assertEqual(gem["covered_by"], "antigravity")
+        self.assertNotIn("gemini", ec.format_connect(rep, table=False))

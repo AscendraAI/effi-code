@@ -104,6 +104,20 @@ class DecideTests(unittest.TestCase):
             r = d.decide("translate 40 UI strings", usable=USABLE)
         self.assertNotEqual(r["provider"], "local")
 
+    def test_gemini_goes_through_antigravity_subscription_first(self):
+        r = d.decide("design a landing page hero", to="gemini",
+                     usable={"antigravity": (True, ""), "gemini": (True, "")})
+        self.assertEqual(r["provider"], "antigravity")
+        r = d.decide("design a landing page hero", to="gemini",
+                     usable={"antigravity": (False, "off"), "gemini": (True, "")})
+        self.assertEqual(r["provider"], "gemini")
+
+    def test_antigravity_argv(self):
+        argv = d._argv("antigravity", "p", Path("/x"), True, Path("/o"), None)
+        self.assertEqual(argv[:4], ["agy", "-p", "p", "--mode"])
+        self.assertIn("accept-edits", argv)
+        self.assertIn("plan", d._argv("antigravity", "p", Path("/x"), False, Path("/o"), None))
+
     def test_claude_recommendation_stays_on_main_thread(self):
         with mock.patch.dict(os.environ, {"EFFI_MODE": "apex"}):
             r = d.decide("refactor utils module", usable=USABLE)
@@ -252,6 +266,19 @@ class FencedRunTests(Env):
         self.assertIn("cfg-denied", out)
         self.assertIn("session-ok", out)
         self.assertFalse((self.home / ".grok/config.toml").exists())
+
+    def test_cli_apply_success_does_not_print_not_applied(self):
+        """Regression: a for/else slipped in when warnings were added, so a
+        successful apply also printed "NOT applied" (found by Codex review)."""
+        repo = _repo()
+        self.fake('echo "x" > app/x.txt\n')
+        m = d.run("add x", to="grok", write=True, start=repo, usable=USABLE)
+        cli = Path(__file__).resolve().parents[1] / "bin/effi-delegate"
+        r = subprocess.run(["bash", str(cli), "apply", m["id"]], capture_output=True, text=True,
+                           env=dict(os.environ))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("applied to the working tree", r.stdout)
+        self.assertNotIn("NOT applied", r.stdout)
 
 
 if __name__ == "__main__":

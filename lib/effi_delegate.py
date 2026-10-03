@@ -43,9 +43,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-PROVIDERS = ("codex", "gemini", "grok", "local", "claude")
+PROVIDERS = ("codex", "gemini", "antigravity", "grok", "local", "claude")
+# Gemini goes through the Antigravity subscription (`agy`) first: the user's
+# decision (2026-10-04) is subscription Gemini only, no API key — and since
+# 2026-06-18 the gemini CLI's personal login no longer serves requests.
+GEMINI_VIA = ["antigravity", "gemini"]
 ALIASES = {"openai": "codex", "gpt": "codex", "xai": "grok", "ollama": "local",
-           "anthropic": "claude", "google": "gemini"}
+           "anthropic": "claude", "google": "gemini", "agy": "antigravity"}
 REALTIME = re.compile(r"(?i)\b(latest|news|today|current(ly)?|recent|this (week|month)|"
                       r"release[sd]?|20\d\d|right now|trending)\b|최신|요즘|오늘|현재|뉴스")
 ASKING = re.compile(r"(?i)\b(what|which|who|when|find|look up|search|research|compare|list|"
@@ -53,6 +57,7 @@ ASKING = re.compile(r"(?i)\b(what|which|who|when|find|look up|search|research|co
 REVIEW = re.compile(r"(?i)\b(review|audit|critique|second opinion|double-check)\b|검토|리뷰|감사")
 REVIEW_ORDER = ["codex", "grok", "gemini"]
 RESEARCH_ORDER = ["grok", "gemini", "codex"]
+SLOW_START = {"antigravity": 40}  # seconds of fixed start-up, measured
 GUARD_PATHS = re.compile(r"(?i)^(scripts(/|$)|\.githooks(/|$)|\.claude(/|$)|\.codex(/|$)|"
                          r"\.github/workflows(/|$)|\.effi(/|$)|\.gitattributes$|\.gitmodules$|"
                          r"AGENTS\.md$|CLAUDE\.md$)")
@@ -62,10 +67,13 @@ ENV_PROVIDER = {
     "codex": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_GENAI_USE_VERTEXAI"),
     "grok": ("XAI_API_KEY", "GROK_HOME"),
+    "antigravity": (),
     "claude": ("ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"),
     "local": ("OLLAMA_HOST", "EFFI_LOCAL_MODEL", "PYTHONPATH"),
 }
 STATE_DIRS = {"codex": ["~/.codex"], "gemini": ["~/.gemini"], "grok": ["~/.grok"],
+              "antigravity": ["~/.gemini", "~/.antigravity-ide", "~/Library/Application Support/Antigravity",
+                              "~/Library/Application Support/Antigravity IDE"],
               "claude": ["~/.claude", "~/.claude.json", "~/.config/claude"],
               "local": ["~/.ollama", "~/.config/effi"]}
 # inside its own state dir a delegate may write sessions/logs, never the files a
@@ -74,6 +82,8 @@ CONFIG_OF = {"codex": ["~/.codex/config.toml", "~/.codex/hooks.json", "~/.codex/
                        "~/.codex/skills", "~/.codex/AGENTS.md"],
              "gemini": ["~/.gemini/settings.json", "~/.gemini/GEMINI.md", "~/.gemini/commands",
                         "~/.gemini/extensions"],
+             "antigravity": ["~/.gemini/settings.json", "~/.gemini/GEMINI.md", "~/.gemini/commands",
+                             "~/.gemini/extensions"],
              "grok": ["~/.grok/config.toml", "~/.grok/settings.json", "~/.grok/hooks", "~/.grok/skills",
                       "~/.grok/agents", "~/.grok/AGENTS.md"],
              "claude": ["~/.claude/settings.json", "~/.claude/settings.local.json", "~/.claude/hooks",
@@ -167,6 +177,10 @@ def decide(task: str, to: Optional[str] = None, kind: Optional[str] = None,
                                              "(use --to <provider> to delegate anyway)"}
         cands = [prim] + [norm(a.get("provider")) for a in rec.get("alternates") or []]
         why = f"{dom} → recommended {prim}"
+    expanded = []
+    for c in cands:
+        expanded += GEMINI_VIA if c == "gemini" else [c]
+    cands = expanded
     seen, ordered = set(), []
     for c in cands:
         if c and c not in seen and (to or c != "claude"):
@@ -228,6 +242,8 @@ def fence_profile(writable: list, network: bool, deny_read: list = (), allow_rea
 # CLIs read ~/.claude for skill/settings compatibility (measured: denying all
 # of it silently stopped grok's tool loop), so only Claude's private parts.
 PRIVATE_OF = {"codex": ["~/.codex"], "gemini": ["~/.gemini"], "grok": ["~/.grok"],
+              "antigravity": ["~/.antigravity-ide", "~/Library/Application Support/Antigravity",
+                              "~/Library/Application Support/Antigravity IDE"],
               "claude": ["~/.claude/projects", "~/.claude/history.jsonl", "~/.claude/.credentials.json",
                          "~/.claude/shell-snapshots", "~/.claude/file-history", "~/.claude/session-env",
                          "~/.claude/todos", "~/.claude.json"],
@@ -295,6 +311,11 @@ def _argv(provider: str, prompt: str, cwd: Path, write: bool, out: Path,
         return ["grok", "-p", prompt, "--cwd", str(cwd), "--max-turns", "30",
                 "--output-format", "plain",
                 "--permission-mode", "acceptEdits" if write else "plan", *m]
+    if provider == "antigravity":
+        # stdout must be a file, never a pipe — agy hangs forever on a pipe
+        # (measured 2026-07-26; _run_fenced always hands it a file).
+        # accept-edits allows file edits and auto-denies shell commands.
+        return ["agy", "-p", prompt, "--mode", "accept-edits" if write else "plan", *(["--model", model] if model else [])]
     if provider == "claude":
         return ["claude", "-p", prompt, "--permission-mode", "acceptEdits" if write else "plan", *m]
     if provider == "local":
@@ -376,6 +397,7 @@ def _freeze(gitdir: str, wt: Path, base: str, jd: Path) -> dict:
                 "--no-textconv", base, text=False),
         _git_wt(gitdir, wt, "diff", "--cached", "--name-status", "-z", "--no-renames",
                 base, text=False),
+        _git_wt(gitdir, wt, "diff", "--cached", "--numstat", "--no-renames", base),
     ]
     for st in steps:
         if st.returncode != 0:
@@ -385,7 +407,13 @@ def _freeze(gitdir: str, wt: Path, base: str, jd: Path) -> dict:
     _write_private(jd / "changes.patch", patch)
     changes = _changes(ns)
     paths = sorted({p for _, ps in changes for p in ps})
+    numstat = []
+    for line in steps[3].stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            numstat.append({"path": parts[2], "added": parts[0], "deleted": parts[1]})
     return {"sha256": hashlib.sha256(patch).hexdigest(), "bytes": len(patch), "files": paths,
+            "numstat": numstat,
             "name_status": [f"{st}\t" + "\t".join(ps) for st, ps in changes],
             "guard_touched": [p for p in paths if GUARD_PATHS.match(p)]}
 

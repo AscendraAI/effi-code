@@ -2,6 +2,21 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Added — Gemini by subscription through Antigravity; clearer `effi delegate` output (2026-10-04)
+- **Gemini runs on the subscription, no API key** (the user's decision). Every
+  delegate route to Gemini tries **Antigravity (`agy`)** first, then the
+  gemini CLI. Measured with agy 1.2.16 inside effi's fence: read job 43 s,
+  write job (`--mode accept-edits`: edits allowed, shell commands auto-denied)
+  70 s. stdout always goes to a file — agy hangs forever on a pipe.
+- Session screen and `effi preflight` show Gemini as 🔗 *구독 → antigravity*
+  and stop asking for a key when Antigravity is connected.
+- `effi delegate` output, after Codex and Gemini independently suggested the
+  same three changes: outcome first (`✅ done · codex · 19.4s · <id>`), changed
+  files with +/- counts and a ready `git diff` command for write jobs, `list`
+  with headers and ages, human-readable `clean`.
+- Fixed: a `for … else` slipped into `apply`'s output, so a successful apply
+  also printed "NOT applied" (found by a Codex review; regression test added).
+
 ### Changed — model catalog refreshed (2026-10-03, was two months overdue)
 - Claude: **Opus 5.5** ($4/$20, replaces Opus 4.8) · **Fable 5.1** (replaces
   Fable 5) · Sonnet 5 price corrected to $2/$10 (was $3/$15).

@@ -1946,6 +1946,7 @@ def preflight(probe: bool = False, task_hint: Optional[str] = None) -> dict:
         pr["best_for"] = (_PROVIDER_BEST_FOR.get(pid)
                           or _PROVIDER_BEST_FOR.get(spec.get("models_provider", pid), "—"))
         results.append(pr)
+    _mark_gemini_covered(results)
     band = assess_task_importance(task_hint).get("band") if task_hint else None
     return {"at": datetime.now().isoformat(timespec="minutes"),
             "providers": results,
@@ -2000,7 +2001,7 @@ def format_preflight(pf: dict) -> str:
     lines.append(f"  {'Provider':<{idw + 2}}{_dpad('Connection', 24)}{_dpad('Usage (~추정)', 16)}Best for")
     lines.append("  " + "─" * idw + "  " + "─" * 22 + "  " + "─" * 14 + "  " + "─" * 16)
     for p in pf["providers"]:
-        icon = _CONN_ICON.get(p["connection"], "·")
+        icon = _conn_icon(p)
         hz = p.get("headroom") or {}
         if hz.get("remaining_pct") is not None:
             usage = f"~${hz['remaining_usd']:.2f}/${hz['budget_usd']:.0f}"
@@ -2183,6 +2184,23 @@ def connect_command(pid: str, spec: dict) -> dict:
     }
 
 
+def _conn_icon(p: dict) -> str:
+    """🔗 when another provider covers this one (gemini → antigravity)."""
+    return "🔗" if p.get("covered_by") else _CONN_ICON.get(p["connection"], "·")
+
+
+def _mark_gemini_covered(providers: list) -> None:
+    """Gemini without a key is covered when the Antigravity subscription works:
+    personal Gemini logins stopped serving on 2026-06-18, and the subscription
+    path is the one effi delegate uses (gemini → antigravity first). Don't nag
+    for an API key the user may have decided not to use (decision 2026-10-04)."""
+    by_id = {p.get("id"): p for p in providers}
+    gem, agy = by_id.get("gemini"), by_id.get("antigravity")
+    if gem and agy and gem.get("connection") != "connected" and agy.get("connection") == "connected":
+        gem["covered_by"] = "antigravity"
+        gem["detail"] = "구독 → antigravity (키 불필요)"
+
+
 def connect_report(probe: bool = False) -> dict:
     """Preflight augmented with per-provider connect hints. Basis for
     `effi connect`, the launcher welcome, and the SessionStart hook."""
@@ -2193,8 +2211,11 @@ def connect_report(probe: bool = False) -> dict:
         p["hint"] = connect_hint(p["id"], spec)
         # can `effi connect <p>` actually launch a login now? (login CLI on PATH)
         p["login_available"] = connect_command(p["id"], spec)["available"]
-    rep["missing"] = [p["id"] for p in rep["providers"] if p["connection"] == "down"]
-    rep["partial"] = [p["id"] for p in rep["providers"] if p["connection"] == "partial"]
+    _mark_gemini_covered(rep["providers"])
+    rep["missing"] = [p["id"] for p in rep["providers"]
+                      if p["connection"] == "down" and not p.get("covered_by")]
+    rep["partial"] = [p["id"] for p in rep["providers"]
+                      if p["connection"] == "partial" and not p.get("covered_by")]
     return rep
 
 
@@ -2213,11 +2234,11 @@ def format_connect(rep: dict, intro: bool = False, action: bool = False,
     if table:
         lines.append(format_preflight(rep))
     todo = [p for p in rep["providers"]
-            if p["connection"] in ("down", "partial")]
+            if p["connection"] in ("down", "partial") and not p.get("covered_by")]
     if todo:
         lines += ["", "  연결하기 (미연결/부분):"]
         for p in todo:
-            icon = _CONN_ICON.get(p["connection"], "·")
+            icon = _conn_icon(p)
             h = p.get("hint") or {}
             lines.append(f"   {icon} {p['id']:<7} {h.get('login','—')}")
             # only offer "바로 실행" when the login CLI is present — otherwise
@@ -2452,7 +2473,7 @@ def splash_data(
             usage = "예산미설정"
         provs.append({
             "id": p["id"], "connection": p["connection"],
-            "icon": _CONN_ICON.get(p["connection"], "·"),
+            "icon": _conn_icon(p),
             "detail": p.get("detail") or "", "usage": usage,
             "best_for": p.get("best_for") or "—",
         })
@@ -2779,7 +2800,7 @@ def format_providers(detail: dict) -> str:
     lines.append(f"  {'Provider':<{idw + 2}}{_dpad('Connection', 22)}{'Used':<12}{'Budget':<10}Remaining (~추정)")
     lines.append("  " + "─" * idw + "  " + "─" * 20 + "  " + "─" * 10 + "  " + "─" * 8 + "  " + "─" * 16)
     for p in detail["providers"]:
-        icon = _CONN_ICON.get(p["connection"], "·")
+        icon = _conn_icon(p)
         hz = p.get("headroom") or {}
         used = f"${float((p.get('usage') or {}).get('usd') or 0):.2f}"
         budget = f"${p['budget_usd']:.0f}" if p.get("budget_usd") else "—"
