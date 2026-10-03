@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# effi-trust — what third-party code your Claude Code runs, and what changed since you approved it
+#
+#   effi trust [scan] [--all] [--json]   audit MCP servers · plugins (+hooks) · marketplaces · skills · hooks
+#                                        (read-only; --all also lists info-level findings)
+#   effi trust list [--json]             the inventory itself
+#   effi trust accept                    record the current state as your approved baseline
+#                                        (~/.config/effi/trust-lock.json — effi's own file, no secrets)
+#
+# exit: 0 nothing high · 1 high findings (incl. "changed since approved")
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+case "${1:-scan}" in
+  -h|--help|help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+exec python3 - "$@" <<'PY'
+import json, os, subprocess, sys
+from pathlib import Path
+import effi_trust as t
+
+args = sys.argv[1:]
+as_json, show_all = "--json" in args, "--all" in args
+args = [a for a in args if a not in ("--json", "--all")]
+cmd = args[0] if args else "scan"
+if cmd not in ("scan", "list", "accept"):
+    print(f"unknown: {cmd} (try: scan list accept)", file=sys.stderr); sys.exit(2)
+try:
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    project = Path(r.stdout.strip()) if r.returncode == 0 else None
+except OSError:
+    project = None
+home = str(Path.home())
+
+def short(s):
+    """~ for the home directory only as a whole path component."""
+    if not isinstance(s, str):
+        return s
+    import re
+    return re.sub(re.escape(home) + r"(?=/|$|\b(?![\w.-]))", "~", s)
+
+if cmd == "accept":
+    p, items = t.accept(project=project)
+    counts = {}
+    for it in items:
+        counts[it["kind"]] = counts.get(it["kind"], 0) + 1
+    print(f"baseline recorded: {short(str(p))}")
+    print("  " + " · ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+    print("  from now on `effi trust` flags anything that changes or appears after now.")
+    sys.exit(0)
+
+items = t.inventory(project=project)
+
+if cmd == "list":
+    if as_json:
+        print(json.dumps(items, ensure_ascii=False, indent=2)); sys.exit(0)
+    for it in items:
+        extra = {"mcp": lambda i: f"{i['transport']} {short(i['target'])} [{short(i.get('scope'))}]",
+                 "plugin": lambda i: f"{'on ' if i['enabled'] else 'off'} v{i['version']} {i['sha']} hooks:{len(i['hook_events'])}",
+                 "marketplace": lambda i: f"{i['repo']}{' (official)' if i['official'] else ''}",
+                 "skill": lambda i: i.get("source") or "(no recorded source)",
+                 "hook": lambda i: f"{i['program']} [{i['matcher']}] [{short(i.get('scope'))}]"}[it["kind"]](it)
+        print(f"  {it['kind']:<11} {short(it['name'])[:60]:<60} {extra}")
+    sys.exit(0)
+
+lock = t.load_lock()
+fs = t.findings(items, lock)
+if as_json:
+    print(json.dumps({"items": len(items), "findings": fs}, ensure_ascii=False, indent=2))
+    sys.exit(1 if any(f["severity"] == "high" for f in fs) else 0)
+
+counts = {}
+for it in items:
+    counts[it["kind"]] = counts.get(it["kind"], 0) + 1
+print("effi trust · " + " · ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+if lock:
+    print(f"baseline: {lock.get('accepted_at')}")
+print()
+icon = {"high": "🔴", "medium": "🟡", "info": "·"}
+shown = [f for f in fs if show_all or f["severity"] != "info"]
+for f in shown:
+    print(f"{icon[f['severity']]} {short(f['id'])}")
+    print(f"    {short(f['msg'])}")
+    if f.get("fix"):
+        print(f"    → {f['fix']}")
+hidden = len(fs) - len(shown)
+n = {s: sum(1 for f in fs if f["severity"] == s) for s in ("high", "medium", "info")}
+print(f"\n{n['high']} high · {n['medium']} medium · {n['info']} info"
+      + (f"  (info hidden — --all)" if hidden else ""))
+sys.exit(1 if n["high"] else 0)
+PY

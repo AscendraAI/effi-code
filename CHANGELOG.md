@@ -2,6 +2,35 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Added — `effi trust`: what third-party code your Claude Code runs, and what changed (2026-10-03)
+`scan` (read-only) · `list` · `accept`. Inventories MCP servers (user, local and
+project scope), marketplaces, plugins and the hook events they register,
+user skills (content-hashed, scanned for risky shapes), and your own hooks.
+- 🔴 unpinned MCP (`pkg@latest` / no version via npx·uvx·bunx·pnpx) · enabled
+  third-party plugins hooking PreToolUse/UserPromptSubmit/PermissionRequest… ·
+  skills that pipe downloads into a shell, decode base64, eval output, carry
+  hidden/bidi unicode or prompt-injection phrasing.
+- 🟡 third-party marketplaces (Anthropic doesn't review them) · skills with no
+  recorded source — grouped into one line, not one per skill.
+- **The baseline is the point**: `accept` records a fingerprint per item; every
+  later scan flags anything **CHANGED since you approved it** (🔴) or new (🟡) —
+  the update-after-approval attack (postmark-mcp, CVE-2025-54136).
+- Secrets never reach the output or the lock: MCP env/header *values* are
+  dropped before fingerprinting (key names stay), so rotating a key isn't a change.
+  The lock is `~/.config/effi/trust-lock.json`, mode 600.
+- Fingerprints are keyed (HMAC, per-machine key in `~/.config/effi/trust-key`),
+  plugin fingerprints include their full content, skill hashes stream every
+  file and follow symlinked dirs once; hook commands, URL credentials/queries
+  and option values after flags are never printed or stored.
+- A clean-context review found 13 issues in the first cut — hook-command and
+  URL secrets reaching output, edited hooks reading as "new" instead of
+  CHANGED, plugin code changes going unseen, crashes on real config shapes,
+  `accept` dropping other projects' approvals, floating versions read as
+  pinned, a corrupt lock passing silently. Each has a regression test
+  (tests/test_trust.py, 22 tests).
+- First run on the author's machine: 1 🔴 (an unpinned `@latest` MCP), 4
+  third-party marketplaces, 13 skills with no recorded source.
+
 ### Added — `effi harness`: a verification floor for any repo (2026-10-03)
 `scan` → `plan`/`show` → `apply [--arm]` → `prove`. Generates one
 `scripts/verify.sh` (0 pass · 1 found · 2 cannot judge — a step that counted

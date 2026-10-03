@@ -118,6 +118,7 @@ if [ $FAST -eq 0 ]; then
   smoke "edit --help" 'effi-edit --help >/dev/null'
   smoke "harness scan --json" 'effi harness scan --json . | python3 -c "import sys,json; assert json.load(sys.stdin)[\"steps\"]"'
   smoke "harness plan" 'effi harness plan . | grep -q "scripts/verify.sh"'
+  smoke "trust scan (empty HOME)" 'effi trust scan --json | python3 -c "import sys,json; d=json.load(sys.stdin); f=d[\"findings\"]; assert [x[\"id\"] for x in f] == [\"baseline\"], f"'
   smoke "doctor --json" 'effi doctor --json | python3 -c "import sys,json; assert \"version\" in json.load(sys.stdin)"'
 fi
 
