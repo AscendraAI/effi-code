@@ -176,6 +176,7 @@ PY
   hooks) exec "$BIN/effi-hooks" "$@" ;;
   harness) exec "$BIN/effi-harness" "$@" ;;
   trust) exec "$BIN/effi-trust" "$@" ;;
+  delegate|del) exec "$BIN/effi-delegate" "$@" ;;
   use) exec "$BIN/effi-use" "$@" ;;
   log) exec "$BIN/effi-log" "$@" ;;
   mode) exec "$BIN/effi-mode" "$@" ;;
@@ -202,6 +203,7 @@ Sessions
   effi hooks [install]     wire statusline + live advisor into Claude Code
   effi harness [scan|plan|apply|prove]  verification floor for this repo (writes only on apply)
   effi trust [scan|list|accept]         audit third-party MCP · plugins · skills · hooks; flag changes since approval
+  effi delegate "<task>" [--review|--write|--to X]  hand one task to codex/gemini/grok/local; paths + summary back
 
 Routing
   effi route|use "task…"   model pick (respects active mode)
@@ -214,7 +216,7 @@ Rules: ORCHESTRATION.md  Modes: catalog/modes.json
 EOF
     ;;
   *)
-    echo "usage: effi [cloud|local|mode|status|doctor|connect|splash|preflight|providers|hooks|statusline|harness|trust|init|route|use|log|accounts|catalog|pick|run|edit|new|review|help]" >&2
+    echo "usage: effi [cloud|local|mode|status|doctor|connect|splash|preflight|providers|hooks|statusline|harness|trust|delegate|init|route|use|log|accounts|catalog|pick|run|edit|new|review|help]" >&2
     exit 1
     ;;
 esac

@@ -182,7 +182,7 @@
 - `codex mcp-server`는 **2026-09-05에 제거됐다**(로컬 codex 0.157.1 도움말에도 없다). 그 위에 지은 래퍼들이 같이 흔들린다 → 실행 경로를 직접 소유하면 이런 변화를 혼자 따라가야 한다.
 - Gemini CLI는 MCP 서버 모드가 아니라 `gemini --acp`(ACP)로 외부에서 부른다.
 
-**결정: 위임 실행기는 만들지 않는다. 있는 것을 감싼다.**
+**결정: 위임 실행기는 만들지 않는다. 있는 것을 감싼다.** → **구현 완료(2026-10-03)**: `effi delegate` — 설계 `docs/02-design/delegate.md`. Codex 리뷰 3회(설계 1 · 코드 2, 마지막은 effi delegate 자체로), 실제 Grok 쓰기 작업이 펜스 안에서 verify 0 → apply까지 통과.
 
 ```
 effi delegate (MCP 도구 하나 · 얇게)

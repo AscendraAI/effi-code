@@ -2,6 +2,30 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Added — `effi delegate`: the bridge from Claude to Codex · Gemini · Grok · local (2026-10-03)
+Claude Code's own orchestration only drives Claude models. `effi delegate
+"<task>"` hands one task to another provider's official CLI and returns paths
++ a ≤15-line summary. effi decides, isolates, gates and records; the CLIs execute.
+- **Decide**: review → a different model than the main thread (codex → grok →
+  gemini); realtime research → grok first; otherwise the routed primary, and
+  "stay on the main thread" when that is Claude. Intent is read directly — the
+  domain classifier filed "review … regressions" under debug.
+- **Isolate**: every job in an OS sandbox (Codex's own, or effi's
+  `sandbox-exec` fence); allowlisted env; other providers' credentials,
+  ~/.ssh and friends unreadable; no sandbox → refused.
+- **Write jobs** (`--write`) run in a git worktree under ~/.cache/effi; the
+  result is frozen as a hash-pinned byte patch, verified by the main tree's
+  `verify.sh` on a fresh checkout (fenced, no network), and
+  `effi delegate apply <id>` puts it in the working tree **without committing**
+  — refused on failed verify, guard paths, moved HEAD or dirty tracked files.
+- Output is printed as **untrusted data**, never as instructions.
+- Reviewed three times by Codex (design + two code passes, the last through
+  `effi delegate --review` itself): 8 + 13 + 7 findings, all fixed or recorded
+  as a known limit (setsid escapes the group kill). Real runs: Codex review in
+  36–67 s; Grok research; Grok write job fenced → verify 0 → applied.
+- tests/test_delegate.py: 21 tests with a fake CLI, including fence escape,
+  secret reads, symlink and `.git` tampering, timeouts, junk files.
+
 ### Fixed — worktrees lost the project mode pin (2026-10-03)
 `.effi/mode` is untracked, so every linked git worktree — Orca workers and
 `claude -w` alike — fell back to the global mode (measured: main tree Apex,
