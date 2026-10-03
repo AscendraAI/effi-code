@@ -2,6 +2,18 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Fixed — Apex meant "Claude for everything" (2026-10-04)
+`allow_local_primary: false` made the replace-local branch fire for **every**
+domain, so Apex routed design, research and bulk to Claude Opus — the reason
+a whole session used only Claude. Apex is now "the best model for this
+domain": judgment work (architecture, plan, security, hard implementation,
+orchestration) stays on Opus 5.5; other domains keep their provider and move
+to its top tier (design/research → Gemini 3.1 Pro); a local primary is
+replaced by the domain's own cloud primary from the routing table; bulk/docs
+stay below top on purpose but never under the mid floor. Reviewed by Codex
+through `effi delegate --review`, which caught two more gaps (local
+preference losing Gemini, docs left on Haiku) — fixed and tested.
+
 ### Added — Gemini by subscription through Antigravity; clearer `effi delegate` output (2026-10-04)
 - **Gemini runs on the subscription, no API key** (the user's decision). Every
   delegate route to Gemini tries **Antigravity (`agy`)** first, then the

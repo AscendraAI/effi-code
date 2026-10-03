@@ -22,6 +22,7 @@ from effi_core import (
     set_mode,
     load_state,
     local_driver_check,
+    model_tier,
 )
 import tempfile
 from pathlib import Path
@@ -117,6 +118,27 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(r["mode"], "apex")
         self.assertNotEqual(r["primary_provider"], "local")
         self.assertEqual(r["start_tier"], "top")
+
+    def test_apex_keeps_the_domain_provider_and_raises_the_tier(self):
+        """Regression (2026-10-04): allow_local_primary=false made the
+        "replace local" branch fire for every domain, so Apex sent design,
+        research and bulk to Claude — "max performance" read as "Claude only".
+        Break it: restore `or not allow_local_primary` → design goes to claude."""
+        d = recommend("design landing page hero", mode="apex")
+        self.assertEqual(d["primary_provider"], "gemini")
+        self.assertEqual(d["primary_model"], "gemini-3.1-pro-preview")   # top tier, not flash
+        r = recommend("research latest MCP registry news", mode="apex")
+        self.assertEqual(r["primary_provider"], "gemini")
+        a = recommend("분산 트랜잭션 아키텍처 재설계", mode="apex")
+        self.assertEqual(a["primary_model"], "claude-opus-5-5")            # judgment stays on Opus
+        b = recommend("translate 40 UI strings", mode="apex")
+        self.assertNotEqual(b["primary_provider"], "local")
+        # Codex review: with a local preference, design must not lose Gemini
+        dl = recommend("design landing page hero", mode="apex", prefer_local=True)
+        self.assertEqual(dl["primary_provider"], "gemini")
+        # docs never below the mid floor
+        doc = recommend("write docstrings and README section", mode="apex")
+        self.assertNotEqual(model_tier(doc["primary_provider"], doc["primary_model"]), "cheap")
 
     def test_apex_coding_opus(self):
         r = recommend("add rate limit middleware and unit tests", mode="apex")

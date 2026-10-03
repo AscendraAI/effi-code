@@ -601,6 +601,38 @@ def maybe_adjust_mode_for_task(
     return result
 
 
+def _catalog_models(provider: Optional[str]) -> dict:
+    return ((load_catalog().get("providers") or {}).get(provider or "") or {}).get("models") or {}
+
+
+def model_tier(provider: Optional[str], model: Optional[str]) -> Optional[str]:
+    for mid_, m in _catalog_models(provider).items():
+        if model in (mid_, m.get("api_id")):
+            return m.get("tier")
+    return None
+
+
+def tier_model(provider: Optional[str], tier: str) -> Optional[str]:
+    for wanted in ("current", "preview"):
+        for mid_, m in _catalog_models(provider).items():
+            if m.get("tier") == tier and m.get("status", "current") == wanted:
+                return m.get("api_id") or mid_
+    return None
+
+
+def top_model(provider: Optional[str]) -> Optional[str]:
+    """The current top-tier model the catalog lists for a provider
+    (routing ids: claude · openai · gemini · grok)."""
+    models = ((load_catalog().get("providers") or {}).get(provider or "") or {}).get("models") or {}
+    # a current top model first; a preview top only when it is the only top
+    # (Gemini's Pro tier has been preview-only for months)
+    for wanted in ("current", "preview"):
+        for mid_, m in models.items():
+            if m.get("tier") == "top" and m.get("status", "current") == wanted:
+                return m.get("api_id") or mid_
+    return None
+
+
 def apply_mode_policy(rec: dict, mode: Optional[dict] = None, cfg: Optional[dict] = None) -> dict:
     """Adjust a base recommendation according to Apex/Cruise/Sip policy."""
     mode = mode or get_mode()
@@ -612,37 +644,49 @@ def apply_mode_policy(rec: dict, mode: Optional[dict] = None, cfg: Optional[dict
     why_extra = []
 
     if mid == "apex":
-        # Never local as primary
-        if rec.get("primary_provider") == "local" or not pol.get("allow_local_primary", True):
+        # Apex = the best model for *this* domain, not "Claude for everything".
+        # Before 2026-10-04 the local-replacement branch fired whenever
+        # allow_local_primary was false — i.e. for every domain — so design,
+        # research and bulk all went to Claude Opus.
+        judgment = ("architecture", "plan", "security", "implement_hard", "orchestrate")
+        if rec.get("primary_provider") == "local" and not pol.get("allow_local_primary", True):
             if domain in ("bulk", "docs"):
                 rec["primary_provider"] = pol.get("bulk_cloud_provider", "claude")
                 rec["primary_model"] = pol.get("bulk_cloud_model", "claude-sonnet-5")
                 why_extra.append("Apex: cloud over local for bulk")
             else:
-                rec["primary_provider"] = pol.get("default_coding_provider", "claude")
-                rec["primary_model"] = pol.get("default_coding_model", "claude-opus-5-5")
-                why_extra.append("Apex: top coding model")
-        if pol.get("prefer_top_for_coding") and domain in (
-            "implement",
-            "implement_hard",
-            "debug",
-            "refactor",
-            "test",
-            "deploy",
-            "orchestrate",
-            "plan",
-            "architecture",
-            "security",
-            "review",
-        ):
-            if domain in ("architecture", "plan", "security", "implement_hard", "orchestrate"):
-                rec["primary_provider"] = "claude"
-                rec["primary_model"] = pol.get("architecture_model", "claude-opus-5-5")
-            elif domain != "design":  # design may stay gemini
-                if rec.get("primary_provider") in ("claude", "openai", "grok", "local"):
-                    rec["primary_provider"] = pol.get("default_coding_provider", "claude")
+                # the domain's own cloud primary from the routing table — not the
+                # display-sorted alternates (Codex review: with prefer_local,
+                # design/research lost Gemini to Claude that way)
+                own = ((load_routing().get("domains") or {}).get(domain) or {}).get("primary") or {}
+                if own.get("provider") and own["provider"] != "local":
+                    prov = own["provider"]
+                else:
+                    alt = next((a for a in rec.get("alternates") or [] if a.get("provider") != "local"), None)
+                    prov = (alt or {}).get("provider") or pol.get("default_coding_provider", "claude")
+                rec["primary_provider"] = prov
+                rec["primary_model"] = top_model(prov) or pol.get("default_coding_model", "claude-opus-5-5")
+                why_extra.append("Apex: cloud top over local")
+        if domain in judgment:
+            rec["primary_provider"] = "claude"
+            rec["primary_model"] = pol.get("architecture_model", "claude-opus-5-5")
+            why_extra.append("Apex: judgment stays on Opus")
+        elif domain not in ("bulk", "docs"):
+            if rec.get("primary_provider") == "claude":
+                if pol.get("prefer_top_for_coding"):
                     rec["primary_model"] = pol.get("default_coding_model", "claude-opus-5-5")
-            why_extra.append("Apex: performance-first routing")
+            else:
+                top = top_model(rec.get("primary_provider"))
+                if top:
+                    rec["primary_model"] = top
+            why_extra.append("Apex: same provider, top tier")
+        else:
+            # bulk/docs: not promoted to top on purpose, but never below the
+            # mode's floor (start_tier_floor, "mid") — Apex docs on Haiku was a gap
+            floor = tier_model(rec.get("primary_provider"), pol.get("start_tier_floor", "mid"))
+            if floor and model_tier(rec.get("primary_provider"), rec.get("primary_model")) == "cheap":
+                rec["primary_model"] = floor
+                why_extra.append("Apex: bulk/docs at the mid floor")
         # floor review
         min_rev = pol.get("min_review") or "clean_context"
         if rec.get("review") == "none" or (
