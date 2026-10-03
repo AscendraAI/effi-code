@@ -23,6 +23,8 @@ effi mode check "task…"      # importance → offer switch
 - User says “풀파워/아껴서” → `effi mode set …` (project pin) + log `[MODE]`
 ## Always
 
+0. Shared rules for every agent (Claude, Codex, Gemini, Grok): @AGENTS.md
+
 1. Read **`ORCHESTRATION.md`** (TRIAGE → PLAN → DO → VERIFY → SHIP).
 2. Respect **active mode** when routing (`effi route` already applies it).
 3. On new work: `effi route "<task>"` (or `effi use`).

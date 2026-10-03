@@ -2,6 +2,27 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Added — one policy, every agent's format (2026-10-04)
+H4 measured that a Codex worker got **none** of effi's policy — it lived only
+in Claude Code's settings. `effi harness` now renders the same rules for each
+agent, from shapes measured on codex 0.157:
+- **Codex hooks** (`.codex/hooks.json`, generated when Codex is used): a
+  `Bash` PreToolUse guard that refuses `git add -A`/`--all`, `commit -a`,
+  force-push (exit 2 blocks in Codex — measured), a `apply_patch` PostToolUse
+  syntax check, and the opt-in Stop verify. Commands use the git-root form so
+  they resolve from any subdirectory. Codex runs project hooks only after a
+  person trusts the exact definition in `/hooks`; effi never bypasses that.
+- One shared `check-edited.sh` reads both Claude's `file_path` and Codex's
+  `apply_patch` text — Codex never reports `Edit|Write`, so a matcher copied
+  from Claude never fires there (it hadn't, in a real repo).
+- **AGENTS.md policy block** — the file Codex, Gemini/Antigravity and Grok
+  read: done means verify exits 0, explicit staging only, guard paths. An
+  existing AGENTS.md is never rewritten (sidecar with the block appended);
+  `scan` suggests `@AGENTS.md` in CLAUDE.md so Claude reads the same rules.
+- `prove` feeds each agent's real payload shape to the scripts. effi-code now
+  carries all of it; checked in a throwaway copy: Codex's `git add -A` was
+  refused with the policy message.
+
 ### Fixed — Apex meant "Claude for everything" (2026-10-04)
 `allow_local_primary: false` made the replace-local branch fire for **every**
 domain, so Apex routed design, research and bulk to Claude Opus — the reason

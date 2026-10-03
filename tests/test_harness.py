@@ -256,5 +256,69 @@ class ReviewRegressions(unittest.TestCase):
         self.assertTrue((dest / "web/node_modules/x").is_dir())
 
 
+class AgentPolicyTests(unittest.TestCase):
+    """One policy, every agent's format (H4: a Codex worker got none of effi's
+    Claude-side policy). Payload shapes measured from codex 0.157 on 2026-10-04."""
+
+    def _applied(self, files):
+        root = _repo(files)
+        h.apply(root, h.plan(root))
+        return root
+
+    def _hook(self, root, script, payload):
+        return subprocess.run(["bash", str(root / ".claude/hooks" / script)], input=json.dumps(payload),
+                              capture_output=True, text=True, cwd=root).returncode
+
+    def test_guard_blocks_sweeping_git_moves_only(self):
+        root = self._applied(PY_REPO)
+        for bad in ("git add -A", "git add --all", "cd x && git add -A", "git commit -am 'x'",
+                    "git commit -a -m x", "git push --force origin main", "git push -f"):
+            self.assertEqual(self._hook(root, "guard-commands.sh",
+                                        {"tool_name": "Bash", "tool_input": {"command": bad}}), 2, bad)
+        for ok in ("git add app/core.py", "git commit -m 'x'", "git push origin main", "git status -A"):
+            self.assertEqual(self._hook(root, "guard-commands.sh",
+                                        {"tool_name": "Bash", "tool_input": {"command": ok}}), 0, ok)
+
+    def test_edit_check_reads_claude_and_codex_payloads(self):
+        root = self._applied(PY_REPO)
+        bad = root / "app/bad.py"
+        bad.write_text("def (:\n")
+        self.assertEqual(self._hook(root, "check-edited.sh", {"tool_input": {"file_path": str(bad)}}), 2)
+        patch = f"*** Begin Patch\n*** Add File: {root / 'app/ok.py'}\n+x = 1\n*** Update File: {bad}\n@@\n*** End Patch"
+        (root / "app/ok.py").write_text("x = 1\n")
+        self.assertEqual(self._hook(root, "check-edited.sh",
+                                    {"tool_name": "apply_patch", "tool_input": {"command": patch}}), 2)
+        bad.write_text("x = 2\n")
+        self.assertEqual(self._hook(root, "check-edited.sh",
+                                    {"tool_name": "apply_patch", "tool_input": {"command": patch}}), 0)
+
+    def test_agents_md_created_or_sidecarred_never_overwritten(self):
+        root = self._applied(PY_REPO)
+        self.assertIn("<!-- effi:policy", (root / "AGENTS.md").read_text())
+        mine = "# My agents\nbe nice\n"
+        root2 = _repo(dict(PY_REPO, **{"AGENTS.md": mine}))
+        h.apply(root2, h.plan(root2))
+        self.assertEqual((root2 / "AGENTS.md").read_text(), mine)
+        side = (root2 / "AGENTS.md.effi-new").read_text()
+        self.assertTrue(side.startswith(mine.rstrip("\n")) and "<!-- effi:policy" in side)
+        root3 = _repo(dict(PY_REPO, **{"AGENTS.md": mine + "\n" + h.AGENTS_POLICY}))
+        self.assertNotIn("AGENTS.md", [i["path"] for i in h.plan(root3)])
+
+    def test_codex_hooks_when_codex_is_used(self):
+        root = _repo(dict(PY_REPO, **{".codex/config.toml": "# x\n"}))
+        paths = [i["path"] for i in h.plan(root)]
+        self.assertIn(".codex/hooks.json", paths)
+        hj = json.loads([i for i in h.plan(root) if i["path"] == ".codex/hooks.json"][0]["content"])
+        self.assertEqual(hj["hooks"]["PostToolUse"][0]["matcher"], "apply_patch")
+        self.assertIn("git rev-parse --show-toplevel", hj["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
+
+    def test_prove_covers_agent_hooks(self):
+        root = _repo(PY_REPO)
+        h.apply(root, h.plan(root), arm=True)
+        res = {c["name"]: c for c in h.prove(root)}
+        self.assertTrue(res["command guard blocks git add -A (Codex/Bash payload)"]["ok"], res)
+        self.assertTrue(res["edit check catches a Codex apply_patch syntax error"]["ok"], res)
+
+
 if __name__ == "__main__":
     unittest.main()
