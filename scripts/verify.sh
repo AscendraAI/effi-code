@@ -63,7 +63,7 @@ for st in "${PIPESTATUS[@]}"; do [ "$st" -eq 0 ] || cannot "사본을 못 만들
 git -C "$WORK/src" init -q 2>/dev/null || cannot "사본에 git init 실패"
 
 hermetic() { (cd "$WORK/src" && env -u EFFI_MODE -u EFFI_PROJECT -u EFFI_ACCOUNT_ID \
-  HOME="$WORK/home" PYTHONPATH="$WORK/src/lib" PATH="$WORK/src/bin:$PATH" "$@"); }
+  EFFI_DELEGATE_OFFLINE=1 HOME="$WORK/home" PYTHONPATH="$WORK/src/lib" PATH="$WORK/src/bin:$PATH" "$@"); }
 
 # ── 3. 단위 테스트 ────────────────────────────────────────
 hermetic python3 -m unittest discover -s tests >"$WORK/unit" 2>&1

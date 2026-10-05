@@ -18,10 +18,25 @@ if [ -z "$NAME" ] || [ -z "$TAG" ] || [ -z "$MSG" ]; then
 fi
 
 NAME="$NAME" TAG="$TAG" MSG="$MSG" python3 - <<'PY'
-import os
-from effi_core import append_task_log, project_root
+import os, sys
+from effi_core import append_task_log, project_root, tasks_dir
 
-path = append_task_log(os.environ["NAME"], os.environ["TAG"], os.environ["MSG"])
+name, tag = os.environ["NAME"], os.environ["TAG"].upper()
+if tag == "COMPLETE":
+    # M+ work needs a passing verdict from another model first (effi verify).
+    # Escape hatch is explicit and lands in the log: EFFI_COMPLETE_WITHOUT_VERIFY="<reason>"
+    from effi_verify import complete_check
+    log = tasks_dir() / name / "log.md"
+    ok, why = complete_check(log.read_text(encoding="utf-8") if log.exists() else "", repo=project_root())
+    reason = os.environ.get("EFFI_COMPLETE_WITHOUT_VERIFY", "").strip()
+    if not ok and not reason:
+        print(f"⛔ COMPLETE refused: {why}", file=sys.stderr)
+        print('   override (recorded): EFFI_COMPLETE_WITHOUT_VERIFY="<reason>" effi log …', file=sys.stderr)
+        sys.exit(1)
+    if not ok:
+        os.environ["MSG"] += f" [unverified: {reason}]"
+
+path = append_task_log(name, os.environ["TAG"], os.environ["MSG"])
 print(f"✓ {path}")
 print(f"  project={project_root()}")
 PY

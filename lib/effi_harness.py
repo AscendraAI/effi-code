@@ -201,8 +201,16 @@ def scan(root: Path) -> dict:
         findings.append(("floor", "no single verify script — nothing answers 'is it done?'"))
     if not ci:
         findings.append(("floor", "no CI workflow — the pre-push gate is the only automatic check"))
-    if hooks_path != ".githooks":
+    if hooks_path and not (Path(hooks_path) if os.path.isabs(hooks_path) else root / hooks_path).is_dir():
+        # git skips a missing hooks dir without a word — every gate in it is off.
+        # Seen 2026-10-05: an absolute path survived a repo move and pointed nowhere.
+        findings.append(("floor", f"core.hooksPath points to a missing folder ({hooks_path}) — "
+                                  "all git hooks are silently off; use a relative path: "
+                                  "git config core.hooksPath .githooks"))
+    elif hooks_path != ".githooks":
         findings.append(("floor", "pre-push gate not armed (core.hooksPath)"))
+    elif os.path.isabs(hooks_path):
+        findings.append(("floor", "core.hooksPath is absolute — it breaks when the repo moves"))
     if not [s for s in steps if s["id"] in ("pytest", "unittest", "selftest")
             or (s["id"] == "npm" and s["script"] == "test")]:
         findings.append(("floor", "no runnable tests found — verify can only check syntax"))

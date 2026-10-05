@@ -141,7 +141,13 @@ def _write_private(p: Path, data) -> None:
 # ── decide ────────────────────────────────────────────────────────────
 
 def usable_providers() -> dict:
-    """provider → (usable, reason) from effi's own connection check."""
+    """provider → (usable, reason) from effi's own connection check.
+
+    EFFI_DELEGATE_OFFLINE=1 makes every provider unusable — tests set it so a
+    run can never reach a real CLI (2026-10-05: a test under a temporary HOME
+    picked the real `agy`, which started Antigravity's login flow each run)."""
+    if os.environ.get("EFFI_DELEGATE_OFFLINE") == "1":
+        return {p: (False, "offline (EFFI_DELEGATE_OFFLINE=1)") for p in PROVIDERS}
     from effi_core import connect_report
     out = {}
     for row in connect_report(probe=False).get("providers") or []:
@@ -226,7 +232,11 @@ def fence_profile(writable: list, network: bool, deny_read: list = (), allow_rea
     allow = "".join(f' (subpath "{_q(_real(p))}")' for p in writable)
     prof = ("(version 1)(allow default)(deny file-write*)"
             f'(allow file-write*{allow} (literal "/dev/null") (literal "/dev/tty")'
-            ' (regex #"^/dev/fd/") (regex #"^/dev/ttys"))')
+            ' (regex #"^/dev/fd/") (regex #"^/dev/ttys")'
+            # macOS /bin/bash 3.2 ignores TMPDIR for here-documents: it checks
+            # that /tmp itself is writable, then creates /tmp/sh-thd*. Allow
+            # exactly that (measured 2026-10-05), not the rest of /tmp
+            ' (regex #"^/private/tmp(/sh-thd[^/]*)?$"))')
     if deny_read:
         prof += "(deny file-read*" + "".join(f' (subpath "{_q(_real(p))}")' for p in deny_read) + ")"
     if deny_write:  # later rules win: carve config files back out of an allowed dir
@@ -273,18 +283,24 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(cwd), *GIT_SAFE, *args], capture_output=True, text=True)
 
 
-def _git_wt(gitdir: str, wt: Path, *args: str, text: bool = True) -> subprocess.CompletedProcess:
+def _git_wt(gitdir: str, wt: Path, *args: str, text: bool = True,
+            iso: Optional[dict] = None) -> subprocess.CompletedProcess:
     """git on a delegate's worktree without trusting anything inside it: the
     gitdir effi recorded at creation, never the worktree's own `.git` file;
     external diff/textconv off; and — because `git add` runs .gitattributes
     filters, which a delegate controls — inside a no-network fence that may
     only write the repo's git dir, the worktree and temp."""
     argv = ["git", *GIT_SAFE, f"--git-dir={gitdir}", f"--work-tree={wt}", *args]
+    env = dict(os.environ, **(iso or {}))
     if _fence_available():
-        common = Path(gitdir).parent.parent  # <repo>/.git/worktrees/<name> → <repo>/.git
-        argv = ["sandbox-exec", "-p", fence_profile([common, wt, tempfile.gettempdir()], network=False,
+        # the real .git stays read-only: with `iso`, new objects and the index
+        # live in a throwaway dir, so a filter can't rewrite hooks or config
+        iso_ = iso or {}
+        writable = [wt] + [p for p in (os.path.dirname(iso_.get("GIT_INDEX_FILE", "")),
+                                       iso_.get("GIT_OBJECT_DIRECTORY", "")) if p]
+        argv = ["sandbox-exec", "-p", fence_profile(writable, network=False,
                                                     deny_read=_secret_paths_for("none")), *argv]
-    return subprocess.run(argv, capture_output=True, text=text, cwd=str(wt))
+    return subprocess.run(argv, capture_output=True, text=text, cwd=str(wt), env=env)
 
 
 def _repo_root(start: Path) -> Path:
@@ -354,7 +370,10 @@ def _run_fenced(argv: list[str], cwd: Path, env: dict, writable: list, network: 
     interruption, and after a normal exit (no stragglers keep writing).
     Returns (exit, seconds, timed_out)."""
     if not native:
-        argv = ["sandbox-exec", "-p", fence_profile(writable, network, deny_read, allow_read, deny_write), *argv]
+        # its own stdout/stderr file only: external programs (cat, CLIs) are
+        # checked on write to an inherited file, builtins are not — measured
+        argv = ["sandbox-exec", "-p", fence_profile(list(writable) + [log], network, deny_read,
+                                                    list(allow_read) + [log], deny_write), *argv]
     t0 = time.time()
     timed_out, rc = False, 124
     with open(log, "wb") as fh:
@@ -391,24 +410,41 @@ def _freeze(gitdir: str, wt: Path, base: str, jd: Path) -> dict:
     bytes (untracked files, binaries and its own commits included)."""
     # caches the delegate's own test runs leave behind are never part of the change,
     # even in a repo whose .gitignore forgot them
-    steps = [
-        _git_wt(gitdir, wt, "add", "-A", "--", ".", *JUNK),
-        _git_wt(gitdir, wt, "diff", "--cached", "--binary", "--no-ext-diff",
-                "--no-textconv", base, text=False),
-        _git_wt(gitdir, wt, "diff", "--cached", "--name-status", "-z", "--no-renames",
-                base, text=False),
-        _git_wt(gitdir, wt, "diff", "--cached", "--numstat", "--no-renames", base),
-    ]
+    td = tempfile.mkdtemp(prefix="effi-freeze-")
+    (Path(td) / "objects").mkdir()
+    real_objects = subprocess.run(["git", f"--git-dir={gitdir}", "rev-parse", "--path-format=absolute",
+                                   "--git-path", "objects"], capture_output=True, text=True).stdout.strip()
+    iso = {"GIT_INDEX_FILE": str(Path(td) / "index"), "GIT_OBJECT_DIRECTORY": str(Path(td) / "objects"),
+           "GIT_ALTERNATE_OBJECT_DIRECTORIES": real_objects}
+    try:
+        # a fresh index from the worktree's HEAD — not a copy, whose new mtime
+        # would make git skip same-size edits (racy-git)
+        forced = _git_wt(gitdir, wt, "ls-files", "-z", "-i", "-c", "--exclude-standard").stdout
+        forced = [f for f in forced.split("\0") if f and ((wt / f).exists() or (wt / f).is_symlink())]
+        steps = [
+            _git_wt(gitdir, wt, "read-tree", "HEAD", iso=iso),
+            _git_wt(gitdir, wt, "add", "-A", "--", ".", *JUNK, iso=iso),
+            # force-staged ignored files are part of the change (Codex, 2026-10-05)
+            _git_wt(gitdir, wt, "add", "-f", "--", *forced, iso=iso) if forced
+            else subprocess.CompletedProcess([], 0, "", ""),
+            _git_wt(gitdir, wt, "diff", "--cached", "--binary", "--no-ext-diff",
+                    "--no-textconv", base, text=False, iso=iso),
+            _git_wt(gitdir, wt, "diff", "--cached", "--name-status", "-z", "--no-renames",
+                    base, text=False, iso=iso),
+            _git_wt(gitdir, wt, "diff", "--cached", "--numstat", "--no-renames", base, iso=iso),
+        ]
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
     for st in steps:
         if st.returncode != 0:
             err = st.stderr if isinstance(st.stderr, str) else st.stderr.decode(errors="ignore")
             raise RuntimeError(f"freezing the delegate's changes failed: {err.strip()[:200]}")
-    patch, ns = steps[1].stdout, steps[2].stdout
+    patch, ns = steps[3].stdout, steps[4].stdout
     _write_private(jd / "changes.patch", patch)
     changes = _changes(ns)
     paths = sorted({p for _, ps in changes for p in ps})
     numstat = []
-    for line in steps[3].stdout.splitlines():
+    for line in steps[5].stdout.splitlines():
         parts = line.split("\t", 2)
         if len(parts) == 3:
             numstat.append({"path": parts[2], "added": parts[0], "deleted": parts[1]})

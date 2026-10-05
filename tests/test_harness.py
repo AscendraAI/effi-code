@@ -320,5 +320,15 @@ class AgentPolicyTests(unittest.TestCase):
         self.assertTrue(res["edit check catches a Codex apply_patch syntax error"]["ok"], res)
 
 
+class HooksPathTests(unittest.TestCase):
+    def test_missing_hooks_dir_is_flagged(self):
+        """Regression (2026-10-05): after a repo move core.hooksPath still
+        named the old absolute folder; git skipped every hook silently."""
+        root = _repo(PY_REPO)
+        subprocess.run(["git", "config", "core.hooksPath", "/nonexistent/old/.githooks"], cwd=root, check=True)
+        msgs = [m for _, m in h.scan(root)["findings"]]
+        self.assertTrue(any("missing folder" in m for m in msgs), msgs)
+
+
 if __name__ == "__main__":
     unittest.main()

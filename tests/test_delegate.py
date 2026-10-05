@@ -60,7 +60,10 @@ class Env(unittest.TestCase):
         self.bin = Path(tempfile.mkdtemp(prefix="effi-delegate-bin-"))
         self.env = mock.patch.dict(os.environ, {
             "HOME": str(self.home), "EFFI_DELEGATE_HOME": str(self.home / ".config/effi/delegate"),
-            "PATH": f"{self.bin}:{os.environ['PATH']}", "EFFI_MODE": "cruise"})
+            "PATH": f"{self.bin}:{os.environ['PATH']}", "EFFI_MODE": "cruise",
+            # never reach a real provider CLI from a test (a fake HOME made the
+            # real agy start its login flow, 2026-10-05)
+            "EFFI_DELEGATE_OFFLINE": "1"})
         self.env.start()
 
     def tearDown(self):
@@ -171,6 +174,16 @@ class FencedRunTests(Env):
         self.assertIn("read-denied", out)
         self.assertIn("env:none", out)
         self.assertFalse((self.home / "escape.txt").exists())
+
+    def test_bash_heredoc_works_inside_the_fence_but_tmp_stays_closed(self):
+        """Regression (2026-10-05): /bin/bash 3.2 writes here-documents to /tmp
+        regardless of TMPDIR, so any CLI wrapper using one failed in the fence."""
+        self.fake("cat <<'EOF'\nheredoc-ok\nEOF\n"
+                  'echo x > /private/tmp/effi-fence-probe.txt 2>/dev/null && echo TMP-WROTE || echo tmp-denied\n')
+        m = d.run("what changed today?", to="grok", start=_repo(), usable=USABLE)
+        out = "\n".join(d.summary(m))
+        self.assertIn("heredoc-ok", out)
+        self.assertIn("tmp-denied", out)
 
     def test_write_job_end_to_end_then_apply(self):
         repo = _repo()

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# effi-verify — a change judged by a model from a different provider; verdict recorded
+#
+#   effi verify                     the working tree (incl. new files) vs HEAD
+#   effi verify HEAD | <sha>        one commit → verdict stored as a git note (refs/notes/effi)
+#   effi verify main...HEAD         a range
+#   effi verify attach [<rev>]      put a pre-commit verdict on the commit with the same change
+#   effi verify show [<rev>]        verdicts recorded on a commit
+#   options: --by <provider> (who wrote it, default claude) · --to <provider> (force the reviewer)
+#            --task <name> (append VERIFICATION to tasks/<name>/log.md) · --timeout <s> · --json
+#
+# exit: 0 CONFIRMED/PLAUSIBLE · 1 REFUTED · 2 UNVERIFIED (could not judge — not a pass)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+case "${1:-}" in
+  -h|--help|help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+exec python3 - "$@" <<'PY'
+import json, sys
+import effi_verify as v
+
+a = sys.argv[1:]
+def opt(name, default=None):
+    if name in a:
+        i = a.index(name); val = a[i + 1] if i + 1 < len(a) else None
+        if val is None or val.startswith("--"):
+            print(f"{name} needs a value", file=sys.stderr); sys.exit(2)
+        del a[i:i + 2]; return val
+    return default
+as_json = "--json" in a
+if as_json: a.remove("--json")
+by, to, task = opt("--by", "claude"), opt("--to"), opt("--task")
+try:
+    timeout = int(opt("--timeout", "900"))
+except ValueError:
+    print("--timeout needs seconds", file=sys.stderr); sys.exit(2)
+sub = a[0] if a and a[0] in ("attach", "show") else None
+try:
+    if sub == "attach":
+        r = v.attach(rev=a[1] if len(a) > 1 else "HEAD")
+        print(json.dumps(r, ensure_ascii=False) if as_json else
+              (f"attached {r['verdict']} to {r['rev'][:12]}" if r["attached"] else f"not attached: {r['why']}"))
+        sys.exit(0 if r["attached"] else 1)
+    if sub == "show":
+        ns = v.notes(v.repo_root(), a[1] if len(a) > 1 else "HEAD")
+        if as_json: print(json.dumps(ns, ensure_ascii=False, indent=2)); sys.exit(0)
+        if not ns: print("no verification recorded on this commit"); sys.exit(1)
+        for n in ns:
+            print(f"{n.get('verdict')} · reviewer {(n.get('reviewer') or {}).get('provider')} · "
+                  f"generator {n.get('generator')} · findings {n.get('findings_total')} · {n.get('at')}")
+        sys.exit(0)
+    r = v.verify(rev=a[0] if a else None, generator=by, to=to, task=task, timeout=timeout)
+except ValueError as e:
+    print(f"⛔ {e}", file=sys.stderr); sys.exit(2)
+if as_json:
+    print(json.dumps(r, ensure_ascii=False, indent=2)); sys.exit(v.EXIT[r["verdict"]])
+ICON = {"CONFIRMED": "✅", "PLAUSIBLE": "🟡", "REFUTED": "❌", "UNVERIFIED": "⛔"}
+rv = r.get("reviewer") or {}
+print(f"{ICON[r['verdict']]} {r['verdict']} · {r['kind']}{' ' + r['rev'][:12] if r.get('rev') else ''}"
+      f" · written by {r['generator']} · reviewed by {rv.get('provider') or '—'}")
+if r.get("normalized"): print(f"  {r['normalized']}")
+if r.get("why"): print(f"  {r['why']}")
+if r.get("summary"): print(f"  {r['summary']}")
+for f in (r.get("findings") or [])[:10]:
+    loc = f"{f.get('file', '?')}:{f.get('line', '?')}"
+    print(f"  - [{f.get('severity', '?')}] {loc} — {str(f.get('issue', ''))[:160]}")
+    if f.get("fix"): print(f"      fix: {str(f['fix'])[:160]}")
+if r.get("kind") == "working" and r["verdict"] != "UNVERIFIED":
+    print("  recorded for this exact change — after committing it: effi verify attach")
+elif r.get("noted"):
+    print(f"  recorded as a git note (refs/notes/effi) — share with: git push origin refs/notes/effi")
+if r.get("job"): print(f"  review: effi delegate show {r['job']}")
+sys.exit(v.EXIT[r["verdict"]])
+PY
