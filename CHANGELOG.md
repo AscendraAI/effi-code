@@ -2,6 +2,37 @@
 
 ## 4.8.0 — 2026-07-26
 
+### Added — `effi verify`: a different provider judges the change (2026-10-05)
+The verification ledger's core: generator ≠ verifier, recorded.
+- `effi verify` (working tree, untracked files included) · `effi verify <rev>`
+  · `effi verify A...B`. The reviewer is chosen through `effi delegate` and is
+  **never the generator's provider** (Gemini and Antigravity count as one).
+- Verdict contract: `CONFIRMED | PLAUSIBLE | REFUTED` + findings JSON in the
+  final fenced block. A high/critical finding forces REFUTED; anything
+  malformed, truncated or unparseable is **UNVERIFIED — never a pass** (exit 2).
+- Records: commit and range verdicts become a **git note** (`refs/notes/effi`,
+  share with `git push origin refs/notes/effi`); a pre-commit verdict is kept
+  under an exact fingerprint and `effi verify attach` puts it on the commit
+  only if the commit is exactly the reviewed change.
+- `effi log <task> COMPLETE` refuses M+ work unless the last verdict passed and
+  everything changed since its base fingerprints exactly as what was reviewed;
+  an explicit, logged override is `EFFI_COMPLETE_WITHOUT_VERIFY="<reason>"`.
+- Snapshots never touch your index or `.git`: throwaway index and object
+  store, git safety flags, and (macOS) a no-network fence for steps that can
+  run filters; without a fence, filter attributes mean UNVERIFIED.
+- Built by verifying itself — 22 Codex rounds, REFUTED 21 times; every finding
+  fixed with a regression test (tests/test_verify.py, 41). Commit 74e5cfe
+  carries the CONFIRMED note.
+
+### Fixed — 2026-10-05
+- Tests could start a real provider CLI under a temporary HOME (it began
+  Antigravity's login flow each run). `EFFI_DELEGATE_OFFLINE=1` now makes every
+  provider unusable; the test helpers and `scripts/verify.sh` set it.
+- `effi harness scan` flags a `core.hooksPath` that points to a missing folder
+  — git skips such hooks silently (this repo's pre-push gate was off after a move).
+- The delegate fence lets `/bin/bash` here-documents work (bash 3.2 ignores
+  TMPDIR) without opening the rest of `/tmp`, and lets a job write its own log.
+
 ### Added — one policy, every agent's format (2026-10-04)
 H4 measured that a Codex worker got **none** of effi's policy — it lived only
 in Claude Code's settings. `effi harness` now renders the same rules for each
